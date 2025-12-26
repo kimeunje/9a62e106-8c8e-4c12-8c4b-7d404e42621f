@@ -39,8 +39,8 @@
         <tbody>
           <tr v-for="seal in sealList" :key="seal.id">
             <td>{{ seal.seal_number }}</td>
-            <td>{{ seal.equipment?.asset_number || '-' }}</td>
-            <td>{{ seal.equipment?.model_name || '-' }}</td>
+            <td>{{ getEquipmentAssetNumber(seal) }}</td>
+            <td>{{ getEquipmentModelName(seal) }}</td>
             <td>{{ formatDate(seal.attached_date) }}</td>
             <td>{{ seal.attached_location || '-' }}</td>
             <td>
@@ -85,6 +85,7 @@ export default {
     return {
       sealList: [],
       equipmentList: [],
+      equipmentMap: {}, // 장비 ID -> 장비 정보 맵
       search: {
         seal_number: '',
         asset_number: '',
@@ -96,8 +97,9 @@ export default {
     }
   },
   mounted() {
-    this.loadSeals()
-    this.loadEquipment()
+    this.loadEquipment().then(() => {
+      this.loadSeals()
+    })
   },
   methods: {
     async loadSeals() {
@@ -111,11 +113,39 @@ export default {
     
     async loadEquipment() {
       try {
-        const response = await equipmentApi.getAll({ per_page: 1000 })
+        const response = await equipmentApi.getAll({ per_page: 10000 })
         this.equipmentList = response.data.items || response.data
+        
+        // 장비 맵 생성 (빠른 조회용)
+        this.equipmentMap = {}
+        this.equipmentList.forEach(eq => {
+          this.equipmentMap[eq.id] = eq
+        })
       } catch (error) {
         console.error('장비 목록 로드 실패:', error)
       }
+    },
+    
+    // 장비 자산번호 가져오기 (seal.equipment가 없을 경우 equipmentMap에서 조회)
+    getEquipmentAssetNumber(seal) {
+      if (seal.equipment?.asset_number) {
+        return seal.equipment.asset_number
+      }
+      if (seal.equipment_id && this.equipmentMap[seal.equipment_id]) {
+        return this.equipmentMap[seal.equipment_id].asset_number
+      }
+      return '-'
+    },
+    
+    // 장비 모델명 가져오기
+    getEquipmentModelName(seal) {
+      if (seal.equipment?.model_name) {
+        return seal.equipment.model_name
+      }
+      if (seal.equipment_id && this.equipmentMap[seal.equipment_id]) {
+        return this.equipmentMap[seal.equipment_id].model_name
+      }
+      return '-'
     },
     
     async searchSeals() {
@@ -148,7 +178,12 @@ export default {
     },
     
     openEditModal(seal) {
-      this.selectedSeal = { ...seal }
+      // 수정 모달을 열 때 equipment 정보가 없으면 equipmentMap에서 가져옴
+      const sealCopy = { ...seal }
+      if (!sealCopy.equipment && sealCopy.equipment_id && this.equipmentMap[sealCopy.equipment_id]) {
+        sealCopy.equipment = this.equipmentMap[sealCopy.equipment_id]
+      }
+      this.selectedSeal = sealCopy
       this.isEdit = true
       this.showModal = true
     },

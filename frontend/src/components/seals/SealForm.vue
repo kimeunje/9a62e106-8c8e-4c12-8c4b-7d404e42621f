@@ -107,7 +107,8 @@ export default {
       this.form = {
         id: this.seal.id,
         seal_number: this.seal.seal_number,
-        equipment_id: this.seal.equipment_id,
+        // equipment_id를 숫자로 변환하여 select의 :value="eq.id"와 타입 일치시킴
+        equipment_id: this.seal.equipment_id ? Number(this.seal.equipment_id) : '',
         attached_date: this.seal.attached_date || '',
         attached_location: this.seal.attached_location || '',
         status: this.seal.status,
@@ -130,11 +131,17 @@ export default {
     async save() {
       this.saving = true
       try {
+        // equipment_id를 숫자로 확실히 변환
+        const submitData = {
+          ...this.form,
+          equipment_id: Number(this.form.equipment_id)
+        }
+        
         if (this.isEdit) {
-          await sealApi.update(this.form.id, this.form)
+          await sealApi.update(this.form.id, submitData)
           alert('보안씰 정보가 수정되었습니다.')
         } else {
-          await sealApi.create(this.form)
+          await sealApi.create(submitData)
           alert('보안씰이 등록되었습니다.')
         }
         this.$emit('saved')
