@@ -89,11 +89,19 @@
                     <div class="equipment-meta">
                       <span class="asset-number">{{ assignment.equipment.asset_number }}</span>
                       <span class="category-tag">{{ assignment.equipment.category }}</span>
+                      <!-- 데스크탑/미니PC인 경우 망분리 정보 표시 -->
+                      <span 
+                        v-if="showNetworkType(assignment.equipment)" 
+                        :class="['network-tag', 'network-' + getNetworkClass(assignment.equipment.network_type)]"
+                      >
+                        {{ assignment.equipment.network_type }}
+                      </span>
                     </div>
                     <div class="assignment-date">할당일: {{ formatDate(assignment.assignment_date) }}</div>
                   </div>
                 </div>
                 <div class="equipment-card-actions">
+                  <button @click="openReplaceModal(assignment)" class="btn-small btn-replace">교체</button>
                   <button @click="openReturnModal(assignment)" class="btn-small btn-danger">반납</button>
                 </div>
               </div>
@@ -159,6 +167,15 @@
       @close="showReturnModal = false"
       @returned="onReturned"
     />
+
+    <!-- 교체 모달 -->
+    <ReplaceModal
+      v-if="showReplaceModal"
+      :user="selectedUser"
+      :current-assignment="replacingAssignment"
+      @close="showReplaceModal = false"
+      @replaced="onReplaced"
+    />
   </div>
 </template>
 
@@ -167,13 +184,15 @@ import { userApi, assignmentApi } from '../../api'
 import UserForm from './UserForm.vue'
 import AssignmentModal from './AssignmentModal.vue'
 import ReturnModal from './ReturnModal.vue'
+import ReplaceModal from './ReplaceModal.vue'
 
 export default {
   name: 'UserList',
   components: {
     UserForm,
     AssignmentModal,
-    ReturnModal
+    ReturnModal,
+    ReplaceModal
   },
   data() {
     return {
@@ -189,9 +208,11 @@ export default {
       showUserModal: false,
       showAssignModal: false,
       showReturnModal: false,
+      showReplaceModal: false,
       isEdit: false,
       editingUser: null,
-      returningAssignment: null
+      returningAssignment: null,
+      replacingAssignment: null
     }
   },
   mounted() {
@@ -243,6 +264,19 @@ export default {
     
     getUserEquipmentCount(userId) {
       return this.activeAssignments.filter(a => a.user_id === userId).length
+    },
+    
+    // 데스크탑/미니PC인 경우 망분리 정보 표시 여부
+    showNetworkType(equipment) {
+      return (equipment.category === '데스크탑' || equipment.category === '미니PC') && equipment.network_type
+    },
+    
+    // 망분리 타입에 따른 CSS 클래스
+    getNetworkClass(networkType) {
+      if (!networkType) return ''
+      if (networkType.includes('내부') || networkType.includes('업무')) return 'internal'
+      if (networkType.includes('인터넷') || networkType.includes('외부')) return 'external'
+      return 'default'
     },
     
     openAddModal() {
@@ -320,6 +354,20 @@ export default {
       await this.loadActiveAssignments()
     },
     
+    // 교체 모달 열기
+    openReplaceModal(assignment) {
+      this.replacingAssignment = assignment
+      this.showReplaceModal = true
+    },
+    
+    // 교체 완료 후 처리
+    async onReplaced() {
+      this.showReplaceModal = false
+      this.replacingAssignment = null
+      await this.loadUserAssignments(this.selectedUser.id)
+      await this.loadActiveAssignments()
+    },
+    
     formatDate(dateString) {
       if (!dateString) return '-'
       return dateString.split('T')[0]
@@ -327,3 +375,44 @@ export default {
   }
 }
 </script>
+
+<style scoped>
+/* 교체 버튼 스타일 */
+.btn-replace {
+  background: #f39c12 !important;
+  color: white !important;
+}
+
+.btn-replace:hover {
+  background: #e67e22 !important;
+}
+
+/* 망분리 태그 스타일 */
+.network-tag {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+.network-internal {
+  background: #3498db;
+  color: white;
+}
+
+.network-external {
+  background: #e74c3c;
+  color: white;
+}
+
+.network-default {
+  background: #9b59b6;
+  color: white;
+}
+
+/* 장비 카드 액션 버튼 간격 */
+.equipment-card-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+</style>
