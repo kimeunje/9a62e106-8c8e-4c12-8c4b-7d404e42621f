@@ -1,0 +1,50 @@
+{
+  "14": {
+    "itemIdCounter": 2,
+    "items": [
+      {
+        "id": 1,
+        "type": "seat",
+        "code": "C-1",
+        "name": "김은제",
+        "floor": 14,
+        "x": 100,
+        "y": 100,
+        "width": 70,
+        "height": 50
+      }
+    ]
+  },
+  "15": {
+    "itemIdCounter": 2,
+    "items": [
+      {
+        "id": 1,
+        "type": "seat",
+        "code": "",
+        "name": "",
+        "floor": 15,
+        "x": 135,
+        "y": 0,
+        "width": 70,
+        "height": 50
+      }
+    ]
+  },
+  "16": {
+    "itemIdCounter": 2,
+    "items": [
+      {
+        "id": 1,
+        "type": "seat",
+        "code": "",
+        "name": "",
+        "floor": 16,
+        "x": 369,
+        "y": 0,
+        "width": 70,
+        "height": 50
+      }
+    ]
+  }
+}

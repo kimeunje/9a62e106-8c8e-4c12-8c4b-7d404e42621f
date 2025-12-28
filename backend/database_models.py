@@ -230,12 +230,13 @@ class ChangeLog(db.Model):
         
         
 class FloorplanSeat(db.Model):
-    """좌석 배치도 - 좌석"""
+    '''좌석 배치도 - 좌석'''
     __tablename__ = 'floorplan_seat'
     
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     code = db.Column(db.String(20), nullable=True, index=True)  # 좌석 번호 (예: C-1)
     name = db.Column(db.String(50), nullable=True, index=True)  # 사용자명
+    floor = db.Column(db.Integer, nullable=False, default=15, index=True)  # 층 (14, 15, 16)
     x = db.Column(db.Integer, nullable=False, default=0)
     y = db.Column(db.Integer, nullable=False, default=0)
     width = db.Column(db.Integer, nullable=False, default=70)
@@ -253,6 +254,7 @@ class FloorplanSeat(db.Model):
             'type': 'seat',
             'code': self.code,
             'name': self.name,
+            'floor': self.floor,
             'x': self.x,
             'y': self.y,
             'width': self.width,
@@ -262,12 +264,13 @@ class FloorplanSeat(db.Model):
 
 
 class FloorplanFacility(db.Model):
-    """좌석 배치도 - 시설"""
+    '''좌석 배치도 - 시설'''
     __tablename__ = 'floorplan_facility'
     
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     name = db.Column(db.String(100), nullable=False)
     facility_type = db.Column(db.String(30), nullable=False, default='facility')  # facility, facility-room, facility-equip
+    floor = db.Column(db.Integer, nullable=False, default=15, index=True)  # 층 (14, 15, 16)
     x = db.Column(db.Integer, nullable=False, default=0)
     y = db.Column(db.Integer, nullable=False, default=0)
     width = db.Column(db.Integer, nullable=False, default=100)
@@ -281,6 +284,7 @@ class FloorplanFacility(db.Model):
             'type': 'facility',
             'name': self.name,
             'facilityType': self.facility_type,
+            'floor': self.floor,
             'x': self.x,
             'y': self.y,
             'width': self.width,

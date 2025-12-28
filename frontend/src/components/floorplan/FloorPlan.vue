@@ -3,7 +3,19 @@
     <div class="toolbar">
       
       <div class="toolbar-row">
-        <h2>좌석 배치도</h2>        
+        <h2>좌석 배치도</h2>
+        
+        <!-- 층 선택 탭 추가 -->
+        <div class="floor-tabs">
+          <button 
+            v-for="floor in floors" 
+            :key="floor.id"
+            :class="['floor-tab', { active: currentFloor === floor.id }]"
+            @click="changeFloor(floor.id)"
+          >
+            {{ floor.name }}
+          </button>
+        </div>
       </div>
 
       <div class="toolbar-row">
@@ -21,7 +33,7 @@
           </button>
           <button @click="exportData" class="btn-secondary">📥 JSON 내보내기</button>
           <button @click="triggerImport" class="btn-secondary">📂 JSON 불러오기</button>
-          <button @click="resetAll" class="btn-danger">🔄 초기화</button>
+          <button @click="resetCurrentFloor" class="btn-danger">🔄 현재 층 초기화</button>
           <input 
             type="file" 
             ref="fileInput" 
@@ -43,20 +55,31 @@
             @input="onSearchInput"
             class="search-input"
           >
+          <label class="search-all-floors">
+            <input type="checkbox" v-model="searchAllFloors">
+            전체 층 검색
+          </label>
           <button @click="search" class="btn-search">🔍 검색</button>
           <button v-if="searchResults.length > 0" @click="clearSearch" class="btn-clear">✕ 초기화</button>
           <span v-if="searchResults.length > 0" class="search-result-count">
             {{ currentSearchIndex + 1 }} / {{ searchResults.length }}건
+            <template v-if="searchAllFloors && searchResults[currentSearchIndex]">
+              ({{ getFloorName(searchResults[currentSearchIndex].floor) }})
+            </template>
             <button @click="prevResult" class="btn-nav" :disabled="searchResults.length <= 1">◀</button>
             <button @click="nextResult" class="btn-nav" :disabled="searchResults.length <= 1">▶</button>
           </span>
         </div>
       </div>
 
-
     </div>
 
     <div class="status-bar">
+      <span class="current-floor-indicator">
+        📍 현재: <strong>{{ getFloorName(currentFloor) }}</strong>
+        (좌석 {{ currentFloorItems.filter(i => i.type === 'seat').length }}개, 
+         시설 {{ currentFloorItems.filter(i => i.type === 'facility').length }}개)
+      </span>
       <span v-if="lastSaved" class="save-status">
         ✅ 마지막 저장: {{ lastSaved }}
       </span>
@@ -77,7 +100,7 @@
       @mouseleave="endDrag"
     >
       <div
-        v-for="item in items"
+        v-for="item in currentFloorItems"
         :key="item.id"
         :class="['item', getItemClass(item), { 
           dragging: dragItem?.id === item.id, 
@@ -171,7 +194,7 @@
       <div class="modal modal-large">
         <div class="modal-header">
           <h3>👤 {{ selectedSeat?.name || '사용자 정보' }}</h3>
-          <span class="seat-code">{{ selectedSeat?.code }}</span>
+          <span class="seat-code">{{ selectedSeat?.code }} ({{ getFloorName(selectedSeat?.floor) }})</span>
         </div>
 
         <!-- 로딩 상태 -->
@@ -204,52 +227,41 @@
               </div>
               <div class="info-item">
                 <label>위치</label>
-                <span>{{ userInfo.location || '-' }}</span>
-              </div>
-              <div class="info-item">
-                <label>전화번호</label>
-                <span>{{ userInfo.phone || '-' }}</span>
-              </div>
-              <div class="info-item">
-                <label>이메일</label>
-                <span>{{ userInfo.email || '-' }}</span>
+                <span>{{ getFloorName(selectedSeat?.floor) }}</span>
               </div>
             </div>
           </div>
 
-          <!-- 할당된 장비 -->
+          <!-- 장비 목록 -->
           <div class="info-section">
-            <h4>사용중인 장비 ({{ userAssignments.length }}개)</h4>
+            <h4>배정 장비</h4>
             <div v-if="userAssignments.length > 0" class="equipment-list">
-              <div v-for="assignment in userAssignments" :key="assignment.id" class="equipment-card">
+              <div v-for="eq in userAssignments" :key="eq.id" class="equipment-card">
                 <div class="equipment-main">
-                  <span class="asset-number">{{ assignment.equipment.asset_number }}</span>
-                  <span class="model-name">{{ assignment.equipment.model_name }}</span>
-                  <span :class="['category-tag', 'cat-' + assignment.equipment.category]">
-                    {{ assignment.equipment.category }}
-                  </span>
+                  <span class="asset-number">{{ eq.asset_number }}</span>
+                  <span class="model-name">{{ eq.model_name }}</span>
+                  <span class="category-tag">{{ eq.category }}</span>
                 </div>
                 <div class="equipment-sub">
-                  <span>할당일: {{ formatDate(assignment.assignment_date) }}</span>
-                  <span v-if="assignment.equipment.network_type" :class="['network-tag', getNetworkClass(assignment.equipment.network_type)]">
-                    {{ assignment.equipment.network_type }}
+                  <span v-if="eq.ip_address">IP: {{ eq.ip_address }}</span>
+                  <span v-if="eq.network_type" :class="['network-tag', getNetworkClass(eq.network_type)]">
+                    {{ eq.network_type }}
                   </span>
                 </div>
               </div>
             </div>
             <div v-else class="no-equipment">
-              <p>할당된 장비가 없습니다.</p>
+              배정된 장비가 없습니다.
             </div>
           </div>
 
-          <!-- 버튼 -->
           <div class="modal-actions">
-            <button @click="goToUserDetail" class="btn-primary">사용자 관리에서 상세보기</button>
             <button @click="closeUserInfoModal" class="btn-secondary">닫기</button>
           </div>
         </div>
       </div>
     </div>
+
   </div>
 </template>
 
@@ -262,8 +274,21 @@ export default {
   name: 'FloorPlan',
   data() {
     return {
-      items: [],
-      itemIdCounter: 1,
+      // 층 정보
+      floors: [
+        { id: 14, name: '14층' },
+        { id: 15, name: '15층' },
+        { id: 16, name: '16층' }
+      ],
+      currentFloor: 15, // 기본 선택 층
+      
+      // 전체 데이터 (층별로 관리)
+      floorData: {
+        14: { items: [], itemIdCounter: 1 },
+        15: { items: [], itemIdCounter: 1 },
+        16: { items: [], itemIdCounter: 1 }
+      },
+      
       deleteMode: false,
       saving: false,
       lastSaved: null,
@@ -273,6 +298,7 @@ export default {
       searchQuery: '',
       searchResults: [],
       currentSearchIndex: 0,
+      searchAllFloors: false,
       
       // 드래그
       dragItem: null,
@@ -304,295 +330,215 @@ export default {
       loadingUserInfo: false
     }
   },
+  
+  computed: {
+    // 현재 층의 아이템들
+    currentFloorItems() {
+      return this.floorData[this.currentFloor]?.items || []
+    },
+    
+    // 현재 층의 itemIdCounter
+    currentItemIdCounter: {
+      get() {
+        return this.floorData[this.currentFloor]?.itemIdCounter || 1
+      },
+      set(val) {
+        if (this.floorData[this.currentFloor]) {
+          this.floorData[this.currentFloor].itemIdCounter = val
+        }
+      }
+    }
+  },
+  
   mounted() {
     this.loadFromServer()
     document.addEventListener('keydown', this.handleKeydown)
     window.addEventListener('beforeunload', this.handleBeforeUnload)
   },
+  
   beforeUnmount() {
     document.removeEventListener('keydown', this.handleKeydown)
     window.removeEventListener('beforeunload', this.handleBeforeUnload)
   },
+  
   methods: {
+    // ===== 층 관련 =====
+    getFloorName(floorId) {
+      const floor = this.floors.find(f => f.id === floorId)
+      return floor ? floor.name : `${floorId}층`
+    },
+    
+    changeFloor(floorId) {
+      if (this.currentFloor === floorId) return
+      
+      // 저장되지 않은 변경사항 확인
+      if (this.hasUnsavedChanges) {
+        if (!confirm('저장되지 않은 변경사항이 있습니다. 층을 변경하시겠습니까?')) {
+          return
+        }
+      }
+      
+      this.currentFloor = floorId
+      this.clearSearch()
+    },
+    
     // ===== 서버 통신 =====
     async loadFromServer() {
       try {
-        const response = await axios.get(`${API_BASE}/floorplan`)
-        if (response.data && response.data.items) {
-          this.items = response.data.items
-          this.itemIdCounter = response.data.itemIdCounter || 1
+        const response = await axios.get(`${API_BASE}/floorplan/all`)
+        if (response.data && response.data.floors) {
+          // 층별 데이터 로드
+          this.floors.forEach(floor => {
+            if (response.data.floors[floor.id]) {
+              this.floorData[floor.id] = response.data.floors[floor.id]
+            }
+          })
         } else {
-          this.createDefaultItems()
+          // 기존 단일 배치도 데이터 마이그레이션
+          await this.migrateOldData()
         }
         this.hasUnsavedChanges = false
       } catch (error) {
         console.error('배치도 로드 실패:', error)
+        // 기존 API로 폴백
+        await this.loadFromLegacyAPI()
+      }
+    },
+    
+    async loadFromLegacyAPI() {
+      try {
+        const response = await axios.get(`${API_BASE}/floorplan`)
+        if (response.data && response.data.items) {
+          // 기존 데이터를 15층에 배치 (마이그레이션)
+          this.floorData[15] = {
+            items: response.data.items.map(item => ({ ...item, floor: 15 })),
+            itemIdCounter: response.data.itemIdCounter || 1
+          }
+        }
+        this.hasUnsavedChanges = false
+      } catch (error) {
+        console.error('기존 API 로드도 실패:', error)
         this.loadFromStorage()
+      }
+    },
+    
+    async migrateOldData() {
+      try {
+        const response = await axios.get(`${API_BASE}/floorplan`)
+        if (response.data && response.data.items && response.data.items.length > 0) {
+          // 기존 데이터가 있으면 15층으로 마이그레이션
+          this.floorData[15] = {
+            items: response.data.items.map(item => ({ ...item, floor: 15 })),
+            itemIdCounter: response.data.itemIdCounter || 1
+          }
+        }
+      } catch (error) {
+        console.log('마이그레이션 대상 데이터 없음')
       }
     },
     
     async saveToServer() {
       this.saving = true
       try {
-        await axios.post(`${API_BASE}/floorplan`, {
-          items: this.items,
-          itemIdCounter: this.itemIdCounter
+        // 층별 데이터 저장
+        await axios.post(`${API_BASE}/floorplan/all`, {
+          floors: this.floorData
         })
         this.lastSaved = new Date().toLocaleTimeString('ko-KR')
         this.hasUnsavedChanges = false
         this.saveToStorage()
       } catch (error) {
         console.error('저장 실패:', error)
-        alert('서버 저장에 실패했습니다. 로컬에 백업 저장합니다.')
-        this.saveToStorage()
-      } finally {
-        this.saving = false
+        // 기존 API로 폴백 (현재 층만 저장)
+        try {
+          await axios.post(`${API_BASE}/floorplan`, {
+            items: this.currentFloorItems,
+            itemIdCounter: this.currentItemIdCounter
+          })
+          this.lastSaved = new Date().toLocaleTimeString('ko-KR')
+          this.hasUnsavedChanges = false
+        } catch (fallbackError) {
+          alert('서버 저장에 실패했습니다. 로컬에 백업 저장합니다.')
+          this.saveToStorage()
+        }
+      }
+      this.saving = false
+    },
+    
+    // 로컬 스토리지 백업
+    saveToStorage() {
+      try {
+        localStorage.setItem('floorplan_data', JSON.stringify(this.floorData))
+      } catch (e) {
+        console.error('로컬 저장 실패:', e)
       }
     },
     
     loadFromStorage() {
-      const saved = localStorage.getItem('floorPlanData')
-      if (saved) {
-        const data = JSON.parse(saved)
-        this.items = data.items || []
-        this.itemIdCounter = data.itemIdCounter || 1
-      } else {
-        this.createDefaultItems()
-      }
-    },
-    
-    saveToStorage() {
-      localStorage.setItem('floorPlanData', JSON.stringify({
-        items: this.items,
-        itemIdCounter: this.itemIdCounter
-      }))
-    },
-    
-    markUnsaved() {
-      this.hasUnsavedChanges = true
-    },
-    
-    handleBeforeUnload(e) {
-      if (this.hasUnsavedChanges) {
-        e.preventDefault()
-        e.returnValue = ''
-      }
-    },
-    
-    createDefaultItems() {
-      const defaultSeats = [
-        { code: 'C-1', name: '유성은', x: 540, y: 80 },
-        { code: 'C-2', name: '김진솔', x: 620, y: 80 },
-        { code: 'C-3', name: '이정선', x: 700, y: 80 },
-        { code: 'C-4', name: '정원화', x: 540, y: 140 },
-        { code: 'C-5', name: '박수정', x: 620, y: 140 },
-        { code: 'C-6', name: '오상은', x: 700, y: 140 },
-      ]
-      
-      defaultSeats.forEach(s => {
-        this.items.push({
-          id: this.itemIdCounter++,
-          type: 'seat',
-          code: s.code,
-          name: s.name,
-          x: s.x,
-          y: s.y,
-          width: 70,
-          height: 50
-        })
-      })
-      
-      this.items.push({
-        id: this.itemIdCounter++,
-        type: 'facility',
-        name: '남자화장실',
-        facilityType: 'facility',
-        x: 20, y: 50, width: 100, height: 80
-      })
-      
-      this.items.push({
-        id: this.itemIdCounter++,
-        type: 'facility',
-        name: '여자화장실',
-        facilityType: 'facility',
-        x: 20, y: 150, width: 100, height: 80
-      })
-      
-      this.items.push({
-        id: this.itemIdCounter++,
-        type: 'facility',
-        name: '메인 전산실\nC-121',
-        facilityType: 'facility-room',
-        x: 350, y: 20, width: 150, height: 80
-      })
-      
-      this.markUnsaved()
-    },
-    
-    // ===== 스타일 헬퍼 =====
-    getItemClass(item) {
-      if (item.type === 'seat') return 'seat'
-      return item.facilityType || 'facility'
-    },
-    
-    getItemStyle(item) {
-      return {
-        left: item.x + 'px',
-        top: item.y + 'px',
-        width: item.width + 'px',
-        height: item.height + 'px'
-      }
-    },
-    
-    formatText(text) {
-      return (text || '').replace(/\n/g, '<br>')
-    },
-    
-    formatDate(dateStr) {
-      if (!dateStr) return '-'
-      return dateStr.split('T')[0]
-    },
-    
-    getNetworkClass(networkType) {
-      if (!networkType) return ''
-      if (networkType.includes('내부') || networkType.includes('업무')) return 'network-internal'
-      if (networkType.includes('인터넷') || networkType.includes('외부')) return 'network-external'
-      return 'network-default'
-    },
-    
-    // ===== 아이템 클릭 =====
-    onItemClick(e, item) {
-      // 드래그 중이면 무시
-      if (this.isDragging) return
-      
-      // 삭제 모드면 삭제 처리
-      if (this.deleteMode) {
-        this.deleteItem(item.id)
-        return
-      }
-      
-      // 좌석이면 사용자 정보 모달 표시
-      if (item.type === 'seat' && item.name) {
-        this.openUserInfoModal(item)
-      }
-    },
-    
-    // ===== 사용자 정보 모달 =====
-    async openUserInfoModal(seat) {
-      this.selectedSeat = seat
-      this.showUserInfoModal = true
-      this.loadingUserInfo = true
-      this.userInfo = null
-      this.userAssignments = []
-      
       try {
-        // 사용자 검색
-        const userResponse = await axios.get(`${API_BASE}/users/search`, {
-          params: { name: seat.name }
-        })
-        
-        if (userResponse.data && userResponse.data.length > 0) {
-          this.userInfo = userResponse.data[0]
-          
-          // 사용자의 장비 할당 정보 조회
-          const assignmentResponse = await axios.get(`${API_BASE}/assignments/user/${this.userInfo.id}`)
-          this.userAssignments = assignmentResponse.data.filter(a => a.status === '사용중')
+        const saved = localStorage.getItem('floorplan_data')
+        if (saved) {
+          this.floorData = JSON.parse(saved)
         }
-      } catch (error) {
-        console.error('사용자 정보 로드 실패:', error)
-      } finally {
-        this.loadingUserInfo = false
+      } catch (e) {
+        console.error('로컬 데이터 로드 실패:', e)
       }
-    },
-    
-    closeUserInfoModal() {
-      this.showUserInfoModal = false
-      this.selectedSeat = null
-      this.userInfo = null
-      this.userAssignments = []
-    },
-    
-    goToUserManagement() {
-      this.closeUserInfoModal()
-      // App.vue의 currentView를 변경하기 위해 이벤트 발생
-      this.$emit('navigate', 'users')
-    },
-    
-    goToUserDetail() {
-      this.closeUserInfoModal()
-      // 사용자 관리 페이지로 이동하면서 선택된 사용자 정보 전달
-      this.$emit('navigate', 'users', { userId: this.userInfo?.id })
     },
     
     // ===== 아이템 추가 =====
     addSeat() {
       const newSeat = {
-        id: this.itemIdCounter++,
+        id: this.currentItemIdCounter++,
         type: 'seat',
-        code: `C-${this.itemIdCounter}`,
+        code: '',
         name: '',
+        floor: this.currentFloor,
         x: 100,
         y: 100,
         width: 70,
         height: 50
       }
-      this.items.push(newSeat)
+      this.floorData[this.currentFloor].items.push(newSeat)
       this.markUnsaved()
-      this.editItem(newSeat)
     },
     
     addFacility() {
       const newFacility = {
-        id: this.itemIdCounter++,
+        id: this.currentItemIdCounter++,
         type: 'facility',
-        name: '새 시설',
+        name: '시설',
         facilityType: 'facility',
+        floor: this.currentFloor,
         x: 100,
         y: 100,
         width: 100,
-        height: 60
+        height: 80
       }
-      this.items.push(newFacility)
+      this.floorData[this.currentFloor].items.push(newFacility)
       this.markUnsaved()
-      this.editItem(newFacility)
     },
     
-    // ===== 아이템 수정 (더블클릭) =====
+    // ===== 아이템 수정/삭제 =====
     editItem(item) {
-      if (this.deleteMode) {
-        this.deleteItem(item.id)
-        return
-      }
-      
-      this.currentEditId = item.id
-      
       if (item.type === 'seat') {
-        this.editingSeat = { code: item.code, name: item.name }
+        this.editingSeat = { ...item }
+        this.currentEditId = item.id
         this.showSeatModal = true
       } else {
-        this.editingFacility = { name: item.name, facilityType: item.facilityType }
+        this.editingFacility = { ...item }
+        this.currentEditId = item.id
         this.showFacilityModal = true
       }
     },
     
     saveSeat() {
-      const item = this.items.find(i => i.id === this.currentEditId)
-      if (item) {
-        item.code = this.editingSeat.code
-        item.name = this.editingSeat.name
+      const idx = this.currentFloorItems.findIndex(i => i.id === this.currentEditId)
+      if (idx !== -1) {
+        this.floorData[this.currentFloor].items[idx].code = this.editingSeat.code
+        this.floorData[this.currentFloor].items[idx].name = this.editingSeat.name
         this.markUnsaved()
       }
       this.closeSeatModal()
-    },
-    
-    saveFacility() {
-      const item = this.items.find(i => i.id === this.currentEditId)
-      if (item) {
-        item.name = this.editingFacility.name
-        item.facilityType = this.editingFacility.facilityType
-        this.markUnsaved()
-      }
-      this.closeFacilityModal()
     },
     
     closeSeatModal() {
@@ -601,78 +547,87 @@ export default {
       this.currentEditId = null
     },
     
+    saveFacility() {
+      const idx = this.currentFloorItems.findIndex(i => i.id === this.currentEditId)
+      if (idx !== -1) {
+        this.floorData[this.currentFloor].items[idx].name = this.editingFacility.name
+        this.floorData[this.currentFloor].items[idx].facilityType = this.editingFacility.facilityType
+        this.markUnsaved()
+      }
+      this.closeFacilityModal()
+    },
+    
     closeFacilityModal() {
       this.showFacilityModal = false
       this.editingFacility = {}
       this.currentEditId = null
     },
     
-    // ===== 삭제 =====
+    deleteItem(id) {
+      if (confirm('이 항목을 삭제하시겠습니까?')) {
+        const idx = this.currentFloorItems.findIndex(i => i.id === id)
+        if (idx !== -1) {
+          this.floorData[this.currentFloor].items.splice(idx, 1)
+          this.markUnsaved()
+        }
+      }
+    },
+    
     toggleDeleteMode() {
       this.deleteMode = !this.deleteMode
     },
     
-    deleteItem(id) {
-      if (confirm('이 항목을 삭제하시겠습니까?')) {
-        this.items = this.items.filter(i => i.id !== id)
+    resetCurrentFloor() {
+      if (confirm(`${this.getFloorName(this.currentFloor)} 배치도를 초기화하시겠습니까?`)) {
+        this.floorData[this.currentFloor] = {
+          items: [],
+          itemIdCounter: 1
+        }
         this.markUnsaved()
       }
+    },
+    
+    markUnsaved() {
+      this.hasUnsavedChanges = true
     },
     
     // ===== 드래그 =====
     startDrag(e, item) {
-      if (e.target.classList.contains('resize-handle')) return
+      if (this.deleteMode) return
       
       this.dragItem = item
+      this.dragOffsetX = e.clientX - item.x
+      this.dragOffsetY = e.clientY - item.y
       this.isDragging = false
-      const rect = e.target.closest('.item').getBoundingClientRect()
-      this.dragOffsetX = e.clientX - rect.left
-      this.dragOffsetY = e.clientY - rect.top
     },
     
     onDrag(e) {
-      if (this.dragItem) {
-        this.isDragging = true
-        const canvas = this.$refs.canvas
-        const canvasRect = canvas.getBoundingClientRect()
-        
-        let newX = e.clientX - canvasRect.left - this.dragOffsetX
-        let newY = e.clientY - canvasRect.top - this.dragOffsetY
-        
-        newX = Math.round(newX / 20) * 20
-        newY = Math.round(newY / 20) * 20
-        
-        newX = Math.max(0, Math.min(newX, canvasRect.width - this.dragItem.width))
-        newY = Math.max(0, Math.min(newY, canvasRect.height - this.dragItem.height))
-        
-        this.dragItem.x = newX
-        this.dragItem.y = newY
-      }
+      if (!this.dragItem) return
       
-      if (this.resizeItem) {
-        let newW = this.resizeStartW + (e.clientX - this.resizeStartX)
-        let newH = this.resizeStartH + (e.clientY - this.resizeStartY)
+      this.isDragging = true
+      const idx = this.currentFloorItems.findIndex(i => i.id === this.dragItem.id)
+      if (idx !== -1) {
+        const canvas = this.$refs.canvas
+        const rect = canvas.getBoundingClientRect()
         
-        newW = Math.max(50, Math.round(newW / 20) * 20)
-        newH = Math.max(30, Math.round(newH / 20) * 20)
+        let newX = e.clientX - rect.left - this.dragOffsetX + canvas.scrollLeft
+        let newY = e.clientY - rect.top - this.dragOffsetY + canvas.scrollTop
         
-        this.resizeItem.width = newW
-        this.resizeItem.height = newH
+        // 경계 체크
+        newX = Math.max(0, newX)
+        newY = Math.max(0, newY)
+        
+        this.floorData[this.currentFloor].items[idx].x = newX
+        this.floorData[this.currentFloor].items[idx].y = newY
+        this.markUnsaved()
       }
     },
     
     endDrag() {
-      if (this.dragItem || this.resizeItem) {
-        this.markUnsaved()
-      }
-      
-      // 잠시 후 isDragging 리셋 (클릭 이벤트와 구분하기 위해)
+      this.dragItem = null
       setTimeout(() => {
         this.isDragging = false
       }, 100)
-      
-      this.dragItem = null
-      this.resizeItem = null
     },
     
     // ===== 리사이즈 =====
@@ -682,90 +637,69 @@ export default {
       this.resizeStartY = e.clientY
       this.resizeStartW = item.width
       this.resizeStartH = item.height
-    },
-    
-    // ===== 내보내기/가져오기 =====
-    exportData() {
-      const dataStr = JSON.stringify({ items: this.items, itemIdCounter: this.itemIdCounter }, null, 2)
-      const blob = new Blob([dataStr], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = '배치도_' + new Date().toISOString().slice(0, 10) + '.json'
-      a.click()
-      URL.revokeObjectURL(url)
-    },
-    
-    triggerImport() {
-      this.$refs.fileInput.click()
-    },
-    
-    importData(event) {
-      const file = event.target.files[0]
-      if (!file) return
       
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        try {
-          const data = JSON.parse(e.target.result)
-          this.items = data.items || []
-          this.itemIdCounter = data.itemIdCounter || 1
-          this.markUnsaved()
-          alert('배치도를 불러왔습니다. 저장 버튼을 눌러 서버에 저장하세요.')
-        } catch (err) {
-          alert('파일을 읽을 수 없습니다.')
-        }
-      }
-      reader.readAsText(file)
-      event.target.value = ''
+      document.addEventListener('mousemove', this.onResize)
+      document.addEventListener('mouseup', this.endResize)
     },
     
-    resetAll() {
-      if (confirm('모든 배치를 초기화하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) {
-        this.items = []
-        this.itemIdCounter = 1
-        this.createDefaultItems()
+    onResize(e) {
+      if (!this.resizeItem) return
+      
+      const idx = this.currentFloorItems.findIndex(i => i.id === this.resizeItem.id)
+      if (idx !== -1) {
+        const deltaX = e.clientX - this.resizeStartX
+        const deltaY = e.clientY - this.resizeStartY
+        
+        this.floorData[this.currentFloor].items[idx].width = Math.max(40, this.resizeStartW + deltaX)
+        this.floorData[this.currentFloor].items[idx].height = Math.max(30, this.resizeStartH + deltaY)
+        this.markUnsaved()
       }
     },
     
-    // ===== 키보드 =====
-    handleKeydown(e) {
-      if (e.key === 'Escape') {
-        this.closeSeatModal()
-        this.closeFacilityModal()
-        this.closeUserInfoModal()
-        if (this.deleteMode) this.deleteMode = false
-      }
-      if (e.ctrlKey && e.key === 's') {
-        e.preventDefault()
-        this.saveToServer()
-      }
-      // Ctrl+F로 검색창 포커스
-      if (e.ctrlKey && e.key === 'f') {
-        e.preventDefault()
-        document.querySelector('.search-input')?.focus()
-      }
+    endResize() {
+      this.resizeItem = null
+      document.removeEventListener('mousemove', this.onResize)
+      document.removeEventListener('mouseup', this.endResize)
     },
     
     // ===== 검색 =====
     search() {
-      if (!this.searchQuery.trim()) {
+      const query = this.searchQuery.trim().toLowerCase()
+      if (!query) {
         this.clearSearch()
         return
       }
       
-      const query = this.searchQuery.toLowerCase().trim()
+      this.searchResults = []
       
-      this.searchResults = this.items.filter(item => {
-        if (item.type === 'seat') {
-          return (item.name && item.name.toLowerCase().includes(query)) ||
-                 (item.code && item.code.toLowerCase().includes(query))
-        }
-        return item.name && item.name.toLowerCase().includes(query)
-      })
+      if (this.searchAllFloors) {
+        // 전체 층 검색
+        this.floors.forEach(floor => {
+          const items = this.floorData[floor.id]?.items || []
+          items.forEach(item => {
+            if (item.type === 'seat') {
+              const nameMatch = (item.name || '').toLowerCase().includes(query)
+              const codeMatch = (item.code || '').toLowerCase().includes(query)
+              if (nameMatch || codeMatch) {
+                this.searchResults.push({ ...item, floor: floor.id })
+              }
+            }
+          })
+        })
+      } else {
+        // 현재 층만 검색
+        this.currentFloorItems.forEach(item => {
+          if (item.type === 'seat') {
+            const nameMatch = (item.name || '').toLowerCase().includes(query)
+            const codeMatch = (item.code || '').toLowerCase().includes(query)
+            if (nameMatch || codeMatch) {
+              this.searchResults.push({ ...item, floor: this.currentFloor })
+            }
+          }
+        })
+      }
       
       this.currentSearchIndex = 0
-      
       if (this.searchResults.length > 0) {
         this.scrollToResult()
       } else {
@@ -774,7 +708,6 @@ export default {
     },
     
     onSearchInput() {
-      // 입력 중에는 실시간 검색하지 않음 (Enter나 버튼 클릭 시에만)
       if (!this.searchQuery.trim()) {
         this.clearSearch()
       }
@@ -802,27 +735,201 @@ export default {
     
     scrollToResult() {
       const currentItem = this.searchResults[this.currentSearchIndex]
-      if (currentItem && this.$refs.canvas) {
-        const canvas = this.$refs.canvas
-        // 해당 아이템이 캔버스 중앙에 오도록 스크롤
-        const scrollLeft = currentItem.x - (canvas.clientWidth / 2) + (currentItem.width / 2)
-        const scrollTop = currentItem.y - (canvas.clientHeight / 2) + (currentItem.height / 2)
-        
-        canvas.scrollTo({
-          left: Math.max(0, scrollLeft),
-          top: Math.max(0, scrollTop),
-          behavior: 'smooth'
-        })
+      if (!currentItem) return
+      
+      // 다른 층이면 층 변경
+      if (currentItem.floor !== this.currentFloor) {
+        this.currentFloor = currentItem.floor
       }
+      
+      // 스크롤
+      this.$nextTick(() => {
+        if (this.$refs.canvas) {
+          const canvas = this.$refs.canvas
+          const scrollLeft = currentItem.x - (canvas.clientWidth / 2) + (currentItem.width / 2)
+          const scrollTop = currentItem.y - (canvas.clientHeight / 2) + (currentItem.height / 2)
+          
+          canvas.scrollTo({
+            left: Math.max(0, scrollLeft),
+            top: Math.max(0, scrollTop),
+            behavior: 'smooth'
+          })
+        }
+      })
     },
     
     isSearchResult(item) {
-      return this.searchResults.some(r => r.id === item.id)
+      return this.searchResults.some(r => r.id === item.id && r.floor === this.currentFloor)
     },
     
     isCurrentSearchResult(item) {
-      return this.searchResults.length > 0 && 
-             this.searchResults[this.currentSearchIndex]?.id === item.id
+      const current = this.searchResults[this.currentSearchIndex]
+      return current && current.id === item.id && current.floor === this.currentFloor
+    },
+    
+    // ===== 아이템 클릭 =====
+    onItemClick(e, item) {
+      if (this.isDragging) return
+      
+      if (this.deleteMode) {
+        this.deleteItem(item.id)
+        return
+      }
+      
+      if (item.type === 'seat' && item.name) {
+        this.openUserInfoModal(item)
+      }
+    },
+    
+    // ===== 사용자 정보 모달 =====
+    async openUserInfoModal(seat) {
+      this.selectedSeat = seat
+      this.showUserInfoModal = true
+      this.loadingUserInfo = true
+      this.userInfo = null
+      this.userAssignments = []
+      
+      try {
+        // 사용자 검색
+        const userRes = await axios.get(`${API_BASE}/users`, {
+          params: { search: seat.name }
+        })
+        
+        if (userRes.data && userRes.data.length > 0) {
+          const user = userRes.data.find(u => u.name === seat.name) || userRes.data[0]
+          this.userInfo = user
+          
+          // 장비 정보 로드
+          const assignRes = await axios.get(`${API_BASE}/users/${user.id}/assignments`)
+          this.userAssignments = assignRes.data || []
+        }
+      } catch (error) {
+        console.error('사용자 정보 로드 실패:', error)
+      }
+      
+      this.loadingUserInfo = false
+    },
+    
+    closeUserInfoModal() {
+      this.showUserInfoModal = false
+      this.selectedSeat = null
+      this.userInfo = null
+      this.userAssignments = []
+    },
+    
+    goToUserManagement() {
+      this.closeUserInfoModal()
+      this.$router.push('/users')
+    },
+    
+    // ===== 내보내기/가져오기 =====
+    exportData() {
+      const dataStr = JSON.stringify(this.floorData, null, 2)
+      const blob = new Blob([dataStr], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `floorplan_all_floors_${new Date().toISOString().split('T')[0]}.json`
+      a.click()
+      
+      URL.revokeObjectURL(url)
+    },
+    
+    triggerImport() {
+      this.$refs.fileInput.click()
+    },
+    
+    importData(event) {
+      const file = event.target.files[0]
+      if (!file) return
+      
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        try {
+          const data = JSON.parse(e.target.result)
+          
+          // 새로운 층별 포맷인지 확인
+          if (data.floors || (data[14] || data[15] || data[16])) {
+            const floors = data.floors || data
+            this.floors.forEach(floor => {
+              if (floors[floor.id]) {
+                this.floorData[floor.id] = floors[floor.id]
+              }
+            })
+          } else if (data.items) {
+            // 기존 단일 배치도 포맷
+            this.floorData[this.currentFloor] = {
+              items: data.items.map(item => ({ ...item, floor: this.currentFloor })),
+              itemIdCounter: data.itemIdCounter || 1
+            }
+          }
+          
+          this.markUnsaved()
+          alert('데이터를 불러왔습니다.')
+        } catch (error) {
+          alert('파일을 읽는 중 오류가 발생했습니다.')
+          console.error(error)
+        }
+      }
+      reader.readAsText(file)
+      event.target.value = ''
+    },
+    
+    // ===== 키보드 단축키 =====
+    handleKeydown(e) {
+      // Ctrl+S: 저장
+      if (e.ctrlKey && e.key === 's') {
+        e.preventDefault()
+        this.saveToServer()
+      }
+      
+      // Ctrl+F: 검색 포커스
+      if (e.ctrlKey && e.key === 'f') {
+        e.preventDefault()
+        document.querySelector('.search-input')?.focus()
+      }
+      
+      // ESC: 모달 닫기
+      if (e.key === 'Escape') {
+        this.closeSeatModal()
+        this.closeFacilityModal()
+        this.closeUserInfoModal()
+        this.deleteMode = false
+      }
+    },
+    
+    handleBeforeUnload(e) {
+      if (this.hasUnsavedChanges) {
+        e.preventDefault()
+        e.returnValue = ''
+      }
+    },
+    
+    // ===== 스타일 헬퍼 =====
+    getItemClass(item) {
+      if (item.type === 'seat') return 'seat'
+      return item.facilityType || 'facility'
+    },
+    
+    getItemStyle(item) {
+      return {
+        left: item.x + 'px',
+        top: item.y + 'px',
+        width: item.width + 'px',
+        height: item.height + 'px'
+      }
+    },
+    
+    formatText(text) {
+      return (text || '').replace(/\n/g, '<br>')
+    },
+    
+    getNetworkClass(networkType) {
+      if (!networkType) return ''
+      if (networkType.includes('내부') || networkType.includes('업무')) return 'network-internal'
+      if (networkType.includes('인터넷') || networkType.includes('외부')) return 'network-external'
+      return 'network-default'
     }
   }
 }
@@ -854,6 +961,100 @@ export default {
   white-space: nowrap;
 }
 
+/* 층 탭 스타일 */
+.floor-tabs {
+  display: flex;
+  gap: 0.5rem;
+  background: #f0f0f0;
+  padding: 0.25rem;
+  border-radius: 8px;
+}
+
+.floor-tab {
+  padding: 0.5rem 1.25rem;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #666;
+  transition: all 0.2s;
+}
+
+.floor-tab:hover {
+  background: #e0e0e0;
+  color: #333;
+}
+
+.floor-tab.active {
+  background: #3498db;
+  color: white;
+  box-shadow: 0 2px 4px rgba(52, 152, 219, 0.3);
+}
+
+/* 툴바 버튼 */
+.toolbar-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.toolbar-buttons button {
+  padding: 0.5rem 0.8rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: #3498db;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #2980b9;
+}
+
+.btn-secondary {
+  background: #95a5a6;
+  color: white;
+}
+
+.btn-secondary:hover {
+  background: #7f8c8d;
+}
+
+.btn-warning {
+  background: #f39c12;
+  color: white;
+}
+
+.btn-warning:hover {
+  background: #e67e22;
+}
+
+.btn-warning.active {
+  background: #e74c3c;
+  animation: pulse 1s infinite;
+}
+
+.btn-danger {
+  background: #e74c3c;
+  color: white;
+}
+
+.btn-danger:hover {
+  background: #c0392b;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
 /* 검색 영역 */
 .search-area {
   display: flex;
@@ -874,7 +1075,19 @@ export default {
 .search-input:focus {
   outline: none;
   border-color: #3498db;
-  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+}
+
+.search-all-floors {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: #666;
+  cursor: pointer;
+}
+
+.search-all-floors input {
+  cursor: pointer;
 }
 
 .btn-search {
@@ -884,8 +1097,6 @@ export default {
   border: none;
   border-radius: 20px;
   cursor: pointer;
-  font-size: 0.9rem;
-  transition: all 0.2s;
 }
 
 .btn-search:hover {
@@ -893,218 +1104,190 @@ export default {
 }
 
 .btn-clear {
-  padding: 0.5rem 0.75rem;
+  padding: 0.35rem 0.7rem;
   background: #e74c3c;
   color: white;
   border: none;
   border-radius: 20px;
   cursor: pointer;
-  font-size: 0.85rem;
-}
-
-.btn-clear:hover {
-  background: #c0392b;
+  font-size: 0.8rem;
 }
 
 .search-result-count {
+  font-size: 0.85rem;
+  color: #666;
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.85rem;
-  color: #2c3e50;
-  background: #ecf0f1;
-  padding: 0.4rem 0.75rem;
-  border-radius: 20px;
 }
 
 .btn-nav {
   padding: 0.25rem 0.5rem;
-  background: #3498db;
-  color: white;
+  background: #ecf0f1;
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 0.8rem;
 }
 
 .btn-nav:disabled {
-  background: #bdc3c7;
+  opacity: 0.5;
   cursor: not-allowed;
 }
 
-.btn-nav:not(:disabled):hover {
-  background: #2980b9;
-}
-
-.toolbar-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.toolbar-buttons button {
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: 6px;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.toolbar-buttons button:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow: 0 3px 10px rgba(0,0,0,0.2);
-}
-
-.toolbar-buttons button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.btn-primary { background: #3498db; color: white; }
-.btn-secondary { background: #95a5a6; color: white; }
-.btn-warning { background: #f39c12; color: white; }
-.btn-warning.active { background: #e74c3c; box-shadow: 0 0 15px rgba(231, 76, 60, 0.5); }
-.btn-danger { background: #e74c3c; color: white; }
-
+/* 상태 바 */
 .status-bar {
   display: flex;
   gap: 1rem;
-  margin-bottom: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: #f8f9fa;
+  border-radius: 6px;
   font-size: 0.85rem;
+  flex-wrap: wrap;
 }
 
-.save-status { color: #27ae60; }
-.unsaved-status { color: #e67e22; font-weight: 500; }
+.current-floor-indicator {
+  color: #2c3e50;
+}
+
+.save-status {
+  color: #27ae60;
+}
+
+.unsaved-status {
+  color: #e74c3c;
+}
 
 .help-text {
-  text-align: center;
+  font-size: 0.8rem;
   color: #7f8c8d;
-  font-size: 0.85rem;
-  margin-bottom: 1rem;
+  margin: 0.5rem 0;
 }
 
+/* 캔버스 */
 .canvas-container {
-  background: #f8f9fa;
-  border-radius: 12px;
   position: relative;
   width: 100%;
-  height: 700px;
-  overflow: auto;
-  background-image: 
-    linear-gradient(rgba(200,200,200,0.3) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(200,200,200,0.3) 1px, transparent 1px);
+  height: 600px;
+  background: 
+    linear-gradient(#e0e0e0 1px, transparent 1px),
+    linear-gradient(90deg, #e0e0e0 1px, transparent 1px);
   background-size: 20px 20px;
-  border: 1px solid #ddd;
+  border: 2px solid #bdc3c7;
+  border-radius: 8px;
+  overflow: auto;
 }
 
+/* 아이템 공통 */
 .item {
   position: absolute;
-  border-radius: 6px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
-  text-align: center;
+  border-radius: 6px;
   cursor: move;
   user-select: none;
+  font-size: 0.75rem;
+  text-align: center;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
   transition: box-shadow 0.2s;
-  overflow: hidden;
-  padding: 4px;
-  line-height: 1.3;
 }
 
 .item:hover {
-  box-shadow: 0 5px 20px rgba(0,0,0,0.25);
-  z-index: 100;
+  box-shadow: 0 4px 8px rgba(0,0,0,0.2);
 }
 
 .item.dragging {
   opacity: 0.8;
+  box-shadow: 0 8px 16px rgba(0,0,0,0.3);
   z-index: 1000;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+}
+
+.item.delete-mode {
+  cursor: pointer;
+  animation: shake 0.3s infinite;
+}
+
+.item.delete-mode:hover {
+  background: #e74c3c !important;
+  color: white !important;
+}
+
+@keyframes shake {
+  0%, 100% { transform: rotate(-1deg); }
+  50% { transform: rotate(1deg); }
 }
 
 .item.selected {
-  box-shadow: 0 0 0 3px #3498db;
+  outline: 3px solid #3498db;
+  outline-offset: 2px;
 }
 
 .item.search-highlight {
-  box-shadow: 0 0 0 3px #f39c12;
-  animation: pulse 1s ease-in-out infinite;
+  outline: 3px solid #f39c12;
+  outline-offset: 2px;
 }
 
 .item.search-current {
-  box-shadow: 0 0 0 4px #e74c3c;
-  animation: pulse-strong 0.8s ease-in-out infinite;
-  z-index: 150;
+  outline: 4px solid #e74c3c;
+  outline-offset: 2px;
+  animation: searchPulse 1s infinite;
 }
 
-@keyframes pulse {
+@keyframes searchPulse {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.02); }
 }
 
-@keyframes pulse-strong {
-  0%, 100% { transform: scale(1); box-shadow: 0 0 0 4px #e74c3c; }
-  50% { transform: scale(1.05); box-shadow: 0 0 15px 4px rgba(231, 76, 60, 0.6); }
-}
-
-.item.delete-mode:hover {
-  box-shadow: 0 0 20px rgba(255, 0, 0, 0.6);
-  cursor: pointer;
-}
-
-.seat {
-  background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+/* 좌석 */
+.item.seat {
+  background: linear-gradient(135deg, #e3f2fd, #bbdefb);
   border: 2px solid #1976d2;
   color: #1565c0;
-  cursor: pointer;
 }
 
-.seat .name { font-weight: 600; font-size: 11px; }
-.seat .code { font-size: 9px; opacity: 0.7; }
+.item.seat .name {
+  font-weight: 600;
+  font-size: 0.8rem;
+}
 
-.facility {
-  background: linear-gradient(135deg, #78909c 0%, #546e7a 100%);
-  border: 2px solid #37474f;
+.item.seat .code {
+  font-size: 0.65rem;
+  color: #1976d2;
+  opacity: 0.8;
+}
+
+/* 시설 유형 */
+.item.facility {
+  background: linear-gradient(135deg, #78909c, #546e7a);
   color: white;
-  font-weight: 500;
 }
 
-.facility-room {
-  background: linear-gradient(135deg, #ce93d8 0%, #ba68c8 100%);
-  border: 2px solid #8e24aa;
-  color: #4a148c;
-  font-weight: 500;
+.item.facility-room {
+  background: linear-gradient(135deg, #ce93d8, #ba68c8);
+  color: white;
 }
 
-.facility-equip {
-  background: linear-gradient(135deg, #fff176 0%, #ffd54f 100%);
-  border: 2px solid #f9a825;
+.item.facility-equip {
+  background: linear-gradient(135deg, #fff176, #ffd54f);
   color: #5d4037;
-  font-weight: 500;
 }
 
+/* 리사이즈 핸들 */
 .resize-handle {
   position: absolute;
+  right: 0;
+  bottom: 0;
   width: 12px;
   height: 12px;
-  background: #1976d2;
-  border-radius: 2px;
-  bottom: 2px;
-  right: 2px;
+  background: linear-gradient(135deg, transparent 50%, rgba(0,0,0,0.3) 50%);
   cursor: se-resize;
-  opacity: 0;
-  transition: opacity 0.2s;
+  border-radius: 0 0 4px 0;
 }
 
-.item:hover .resize-handle { opacity: 1; }
-
+/* 범례 */
 .legend {
   display: flex;
-  justify-content: center;
   flex-wrap: wrap;
   gap: 1.5rem;
   margin-top: 1rem;
@@ -1206,6 +1389,7 @@ export default {
   border: 1px solid #ddd;
   border-radius: 6px;
   font-size: 1rem;
+  box-sizing: border-box;
 }
 
 .form-group input:focus,
