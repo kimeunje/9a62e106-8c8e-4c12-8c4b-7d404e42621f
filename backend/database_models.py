@@ -227,3 +227,62 @@ class ChangeLog(db.Model):
             'changed_by': self.changed_by,
             'reason': self.reason
         }
+        
+        
+class FloorplanSeat(db.Model):
+    """좌석 배치도 - 좌석"""
+    __tablename__ = 'floorplan_seat'
+    
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    code = db.Column(db.String(20), nullable=True, index=True)  # 좌석 번호 (예: C-1)
+    name = db.Column(db.String(50), nullable=True, index=True)  # 사용자명
+    x = db.Column(db.Integer, nullable=False, default=0)
+    y = db.Column(db.Integer, nullable=False, default=0)
+    width = db.Column(db.Integer, nullable=False, default=70)
+    height = db.Column(db.Integer, nullable=False, default=50)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='SET NULL'), nullable=True, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # User와 연결 (선택적)
+    user = db.relationship('User', backref='seat', lazy=True)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'type': 'seat',
+            'code': self.code,
+            'name': self.name,
+            'x': self.x,
+            'y': self.y,
+            'width': self.width,
+            'height': self.height,
+            'user_id': self.user_id
+        }
+
+
+class FloorplanFacility(db.Model):
+    """좌석 배치도 - 시설"""
+    __tablename__ = 'floorplan_facility'
+    
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    name = db.Column(db.String(100), nullable=False)
+    facility_type = db.Column(db.String(30), nullable=False, default='facility')  # facility, facility-room, facility-equip
+    x = db.Column(db.Integer, nullable=False, default=0)
+    y = db.Column(db.Integer, nullable=False, default=0)
+    width = db.Column(db.Integer, nullable=False, default=100)
+    height = db.Column(db.Integer, nullable=False, default=80)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'type': 'facility',
+            'name': self.name,
+            'facilityType': self.facility_type,
+            'x': self.x,
+            'y': self.y,
+            'width': self.width,
+            'height': self.height
+        }
