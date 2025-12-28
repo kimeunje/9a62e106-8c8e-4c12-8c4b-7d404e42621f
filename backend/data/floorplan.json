@@ -1,0 +1,25 @@
+{
+  "items": [
+    {
+      "code": "C-2",
+      "height": 50,
+      "id": 1,
+      "name": "rar",
+      "type": "seat",
+      "width": 70,
+      "x": 700,
+      "y": 120
+    },
+    {
+      "id": 2,
+      "type": "seat",
+      "code": "C-3",
+      "name": "김은제",
+      "x": 1040,
+      "y": 100,
+      "width": 70,
+      "height": 50
+    }
+  ],
+  "itemIdCounter": 3
+}

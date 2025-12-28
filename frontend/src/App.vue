@@ -17,10 +17,17 @@
     <main class="main-content">
       <Dashboard v-if="currentView === 'dashboard'" />
       <EquipmentList v-if="currentView === 'equipment'" />
-      <UserList v-if="currentView === 'users'" />
+      <UserList 
+        v-if="currentView === 'users'" 
+        ref="userList"
+        :initial-user-id="selectedUserId"
+      />
       <SealList v-if="currentView === 'seals'" />
       <HistoryTabs v-if="currentView === 'history'" />
-      <FloorPlan v-if="currentView === 'floorplan'" />
+      <FloorPlan 
+        v-if="currentView === 'floorplan'" 
+        @navigate="handleNavigate"
+      />
     </main>
   </div>
 </template>
@@ -46,6 +53,7 @@ export default {
   data() {
     return {
       currentView: 'dashboard',
+      selectedUserId: null,
       menus: [
         { key: 'dashboard', label: '대시보드' },
         { key: 'equipment', label: '장비 관리' },
@@ -54,6 +62,24 @@ export default {
         { key: 'history', label: '이력 관리' },
         { key: 'floorplan', label: '배치도' }
       ]
+    }
+  },
+  methods: {
+    handleNavigate(view, params) {
+      this.currentView = view
+      
+      // 사용자 관리 페이지로 이동 시 특정 사용자 선택
+      if (view === 'users' && params?.userId) {
+        this.selectedUserId = params.userId
+        // 컴포넌트가 마운트된 후 사용자 선택
+        this.$nextTick(() => {
+          if (this.$refs.userList) {
+            this.$refs.userList.selectUserById(params.userId)
+          }
+        })
+      } else {
+        this.selectedUserId = null
+      }
     }
   }
 }

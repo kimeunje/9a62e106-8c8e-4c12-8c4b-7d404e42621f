@@ -8,6 +8,7 @@ seals_bp = Blueprint('seals', __name__, url_prefix='/api')
 maintenance_bp = Blueprint('maintenance', __name__, url_prefix='/api')
 history_bp = Blueprint('history', __name__, url_prefix='/api')
 imports_bp = Blueprint('imports', __name__, url_prefix='/api')
+floorplan_bp = Blueprint('floorplan', __name__, url_prefix='/api')
 
 # 각 라우트 모듈에서 사용할 수 있도록 export
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     'seals_bp',
     'maintenance_bp',
     'history_bp',
-    'imports_bp'
+    'imports_bp',
+    'floorplan_bp'
 ]

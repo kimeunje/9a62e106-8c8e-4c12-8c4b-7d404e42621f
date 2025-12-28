@@ -11,6 +11,7 @@ from routes.seals import seals_bp
 from routes.maintenance import maintenance_bp
 from routes.history import history_bp
 from routes.imports import imports_bp
+from routes.floorplan import floorplan_bp
 
 
 def create_app(config_class=Config):
@@ -32,6 +33,7 @@ def create_app(config_class=Config):
     app.register_blueprint(maintenance_bp)
     app.register_blueprint(history_bp)
     app.register_blueprint(imports_bp)
+    app.register_blueprint(floorplan_bp)
     
     # 데이터베이스 테이블 생성
     with app.app_context():
