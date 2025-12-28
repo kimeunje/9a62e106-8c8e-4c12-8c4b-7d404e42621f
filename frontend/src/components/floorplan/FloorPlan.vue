@@ -591,13 +591,21 @@ export default {
       this.hasUnsavedChanges = true
     },
     
-    // ===== 드래그 =====
+    // 드래그
     startDrag(e, item) {
       if (this.deleteMode) return
       
+      const canvas = this.$refs.canvas
+      const rect = canvas.getBoundingClientRect()
+      
+      // 마우스 클릭 위치를 캔버스 내부 좌표로 변환
+      const mouseX = e.clientX - rect.left + canvas.scrollLeft
+      const mouseY = e.clientY - rect.top + canvas.scrollTop
+      
       this.dragItem = item
-      this.dragOffsetX = e.clientX - item.x
-      this.dragOffsetY = e.clientY - item.y
+      // 아이템 좌표와 캔버스 내부 마우스 좌표의 차이 계산
+      this.dragOffsetX = mouseX - item.x
+      this.dragOffsetY = mouseY - item.y
       this.isDragging = false
     },
     
