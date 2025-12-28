@@ -2,7 +2,7 @@ import os
 
 class Config:
     """애플리케이션 설정"""
-    DB_USER = os.getenv('DB_USER', 'equipment_user')
+    DB_USER = os.getenv('DB_USER', 'root')
     DB_PASSWORD = os.getenv('DB_PASSWORD', 'dnb123!!')
     DB_HOST = os.getenv('DB_HOST', 'localhost')
     DB_PORT = os.getenv('DB_PORT', '3306')

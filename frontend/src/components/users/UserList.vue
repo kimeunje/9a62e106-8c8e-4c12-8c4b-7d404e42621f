@@ -76,7 +76,7 @@
 
             <div v-if="userAssignments.length > 0" class="assigned-equipment-list">
               <div v-for="assignment in userAssignments" :key="assignment.id" class="equipment-card">
-                <div class="equipment-card-main">
+                <div class="equipment-card-main clickable" @click="openEquipmentDetail(assignment.equipment)">
                   <div class="equipment-icon">
                     <span v-if="assignment.equipment.category === '데스크탑'">🖥️</span>
                     <span v-else-if="assignment.equipment.category === '노트북'">💻</span>
@@ -85,7 +85,10 @@
                     <span v-else>📦</span>
                   </div>
                   <div class="equipment-details">
-                    <div class="equipment-name">{{ assignment.equipment.model_name }}</div>
+                    <div class="equipment-name">
+                      {{ assignment.equipment.model_name }}
+                      <span class="click-hint">클릭하여 상세보기</span>
+                    </div>
                     <div class="equipment-meta">
                       <span class="asset-number">{{ assignment.equipment.asset_number }}</span>
                       <span class="category-tag">{{ assignment.equipment.category }}</span>
@@ -101,8 +104,8 @@
                   </div>
                 </div>
                 <div class="equipment-card-actions">
-                  <button @click="openReplaceModal(assignment)" class="btn-small btn-replace">교체</button>
-                  <button @click="openReturnModal(assignment)" class="btn-small btn-danger">반납</button>
+                  <button @click.stop="openReplaceModal(assignment)" class="btn-small btn-replace">교체</button>
+                  <button @click.stop="openReturnModal(assignment)" class="btn-small btn-danger">반납</button>
                 </div>
               </div>
             </div>
@@ -176,6 +179,14 @@
       @close="showReplaceModal = false"
       @replaced="onReplaced"
     />
+
+    <!-- 장비 상세/수정 모달 -->
+    <EquipmentDetailModal
+      v-if="showEquipmentDetailModal"
+      :equipment="selectedEquipment"
+      @close="showEquipmentDetailModal = false"
+      @updated="onEquipmentUpdated"
+    />
   </div>
 </template>
 
@@ -185,6 +196,7 @@ import UserForm from './UserForm.vue'
 import AssignmentModal from './AssignmentModal.vue'
 import ReturnModal from './ReturnModal.vue'
 import ReplaceModal from './ReplaceModal.vue'
+import EquipmentDetailModal from './EquipmentDetailModal.vue'
 
 export default {
   name: 'UserList',
@@ -192,7 +204,8 @@ export default {
     UserForm,
     AssignmentModal,
     ReturnModal,
-    ReplaceModal
+    ReplaceModal,
+    EquipmentDetailModal
   },
   data() {
     return {
@@ -209,10 +222,12 @@ export default {
       showAssignModal: false,
       showReturnModal: false,
       showReplaceModal: false,
+      showEquipmentDetailModal: false,
       isEdit: false,
       editingUser: null,
       returningAssignment: null,
-      replacingAssignment: null
+      replacingAssignment: null,
+      selectedEquipment: null
     }
   },
   mounted() {
@@ -368,6 +383,21 @@ export default {
       await this.loadActiveAssignments()
     },
     
+    // 장비 상세 모달 열기
+    openEquipmentDetail(equipment) {
+      this.selectedEquipment = equipment
+      this.showEquipmentDetailModal = true
+    },
+    
+    // 장비 수정 완료 후 처리
+    async onEquipmentUpdated() {
+      this.showEquipmentDetailModal = false
+      this.selectedEquipment = null
+      // 장비 정보가 변경되었으므로 할당 목록 새로고침
+      await this.loadUserAssignments(this.selectedUser.id)
+      await this.loadActiveAssignments()
+    },
+    
     formatDate(dateString) {
       if (!dateString) return '-'
       return dateString.split('T')[0]
@@ -414,5 +444,32 @@ export default {
 .equipment-card-actions {
   display: flex;
   gap: 0.5rem;
+}
+
+/* 클릭 가능한 장비 카드 영역 */
+.equipment-card-main.clickable {
+  cursor: pointer;
+  transition: background 0.2s;
+  border-radius: 6px;
+  padding: 0.5rem;
+  margin: -0.5rem;
+  margin-right: 0;
+}
+
+.equipment-card-main.clickable:hover {
+  background: rgba(52, 152, 219, 0.1);
+}
+
+/* 클릭 힌트 */
+.click-hint {
+  font-size: 0.7rem;
+  color: #95a5a6;
+  margin-left: 0.5rem;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.equipment-card-main.clickable:hover .click-hint {
+  opacity: 1;
 }
 </style>
