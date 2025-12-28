@@ -1,50 +1,59 @@
 <template>
   <div class="floor-plan-editor">
     <div class="toolbar">
-      <h2>좌석 배치도</h2>
       
-      <!-- 검색 영역 -->
-      <div class="search-area">
-        <input 
-          v-model="searchQuery" 
-          type="text" 
-          placeholder="이름 또는 좌석번호 검색..." 
-          @keyup.enter="search"
-          @input="onSearchInput"
-          class="search-input"
-        >
-        <button @click="search" class="btn-search">🔍 검색</button>
-        <button v-if="searchResults.length > 0" @click="clearSearch" class="btn-clear">✕ 초기화</button>
-        <span v-if="searchResults.length > 0" class="search-result-count">
-          {{ currentSearchIndex + 1 }} / {{ searchResults.length }}건
-          <button @click="prevResult" class="btn-nav" :disabled="searchResults.length <= 1">◀</button>
-          <button @click="nextResult" class="btn-nav" :disabled="searchResults.length <= 1">▶</button>
-        </span>
+      <div class="toolbar-row">
+        <h2>좌석 배치도</h2>        
       </div>
-      
-      <div class="toolbar-buttons">
-        <button @click="addSeat" class="btn-primary">➕ 좌석 추가</button>
-        <button @click="addFacility" class="btn-primary">🏛️ 시설 추가</button>
-        <button 
-          @click="toggleDeleteMode" 
-          :class="['btn-warning', { active: deleteMode }]"
-        >
-          🗑️ {{ deleteMode ? '삭제 모드 ON' : '삭제 모드' }}
-        </button>
-        <button @click="saveToServer" class="btn-secondary" :disabled="saving">
-          {{ saving ? '저장 중...' : '💾 저장' }}
-        </button>
-        <button @click="exportData" class="btn-secondary">📥 JSON 내보내기</button>
-        <button @click="triggerImport" class="btn-secondary">📂 JSON 불러오기</button>
-        <button @click="resetAll" class="btn-danger">🔄 초기화</button>
-        <input 
-          type="file" 
-          ref="fileInput" 
-          accept=".json" 
-          @change="importData" 
-          style="display: none"
-        >
+
+      <div class="toolbar-row">
+        <div class="toolbar-buttons">
+          <button @click="addSeat" class="btn-primary">➕ 좌석 추가</button>
+          <button @click="addFacility" class="btn-primary">🏛️ 시설 추가</button>
+          <button 
+            @click="toggleDeleteMode" 
+            :class="['btn-warning', { active: deleteMode }]"
+          >
+            🗑️ {{ deleteMode ? '삭제 모드 ON' : '삭제 모드' }}
+          </button>
+          <button @click="saveToServer" class="btn-secondary" :disabled="saving">
+            {{ saving ? '저장 중...' : '💾 저장' }}
+          </button>
+          <button @click="exportData" class="btn-secondary">📥 JSON 내보내기</button>
+          <button @click="triggerImport" class="btn-secondary">📂 JSON 불러오기</button>
+          <button @click="resetAll" class="btn-danger">🔄 초기화</button>
+          <input 
+            type="file" 
+            ref="fileInput" 
+            accept=".json" 
+            @change="importData" 
+            style="display: none"
+          >
+        </div>
       </div>
+
+      <div class="toolbar-row">
+        <!-- 검색 영역 -->
+        <div class="search-area">
+          <input 
+            v-model="searchQuery" 
+            type="text" 
+            placeholder="이름 또는 좌석번호 검색..." 
+            @keyup.enter="search"
+            @input="onSearchInput"
+            class="search-input"
+          >
+          <button @click="search" class="btn-search">🔍 검색</button>
+          <button v-if="searchResults.length > 0" @click="clearSearch" class="btn-clear">✕ 초기화</button>
+          <span v-if="searchResults.length > 0" class="search-result-count">
+            {{ currentSearchIndex + 1 }} / {{ searchResults.length }}건
+            <button @click="prevResult" class="btn-nav" :disabled="searchResults.length <= 1">◀</button>
+            <button @click="nextResult" class="btn-nav" :disabled="searchResults.length <= 1">▶</button>
+          </span>
+        </div>
+      </div>
+
+
     </div>
 
     <div class="status-bar">
@@ -826,16 +835,23 @@ export default {
 
 .toolbar {
   display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.toolbar-row {
+  display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.5rem;
   flex-wrap: wrap;
-  gap: 1rem;
+  gap: 0.75rem;
 }
 
 .toolbar h2 {
   margin: 0;
   color: #2c3e50;
+  white-space: nowrap;
 }
 
 /* 검색 영역 */
