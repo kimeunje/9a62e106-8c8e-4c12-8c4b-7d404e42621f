@@ -1,0 +1,745 @@
+<template>
+  <div class="floor-plan-editor">
+    <div class="toolbar">
+      <h2>좌석 배치도</h2>
+      <div class="toolbar-buttons">
+        <button @click="addSeat" class="btn-primary">➕ 좌석 추가</button>
+        <button @click="addFacility" class="btn-primary">🏛️ 시설 추가</button>
+        <button 
+          @click="toggleDeleteMode" 
+          :class="['btn-warning', { active: deleteMode }]"
+        >
+          🗑️ {{ deleteMode ? '삭제 모드 ON' : '삭제 모드' }}
+        </button>
+        <button @click="exportData" class="btn-secondary">💾 저장 (JSON)</button>
+        <button @click="triggerImport" class="btn-secondary">📂 불러오기</button>
+        <button @click="resetAll" class="btn-danger">🔄 초기화</button>
+        <input 
+          type="file" 
+          ref="fileInput" 
+          accept=".json" 
+          @change="importData" 
+          style="display: none"
+        >
+      </div>
+    </div>
+
+    <div class="help-text">
+      💡 도형을 드래그하여 이동 | 더블클릭하여 수정 | 모서리를 드래그하여 크기 조절
+    </div>
+
+    <div 
+      class="canvas-container" 
+      ref="canvas"
+      @mouseup="endDrag"
+      @mousemove="onDrag"
+      @mouseleave="endDrag"
+    >
+      <div
+        v-for="item in items"
+        :key="item.id"
+        :class="['item', getItemClass(item), { dragging: dragItem?.id === item.id, 'delete-mode': deleteMode }]"
+        :style="getItemStyle(item)"
+        @mousedown="(e) => startDrag(e, item)"
+        @dblclick="editItem(item)"
+      >
+        <template v-if="item.type === 'seat'">
+          <span class="name">{{ item.name || '' }}</span>
+          <span class="code">{{ item.code || '' }}</span>
+        </template>
+        <template v-else>
+          <span v-html="formatText(item.name)"></span>
+        </template>
+        <div 
+          class="resize-handle" 
+          @mousedown.stop="(e) => startResize(e, item)"
+        ></div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item">
+        <div class="legend-color legend-seat"></div>
+        <span>좌석</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-color legend-facility"></div>
+        <span>시설</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-color legend-room"></div>
+        <span>회의실/사무실</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-color legend-equip"></div>
+        <span>장비</span>
+      </div>
+    </div>
+
+    <!-- 좌석 수정 모달 -->
+    <div v-if="showSeatModal" class="modal-overlay" @click.self="closeSeatModal">
+      <div class="modal">
+        <h3>좌석 정보</h3>
+        <div class="form-group">
+          <label>좌석 번호</label>
+          <input v-model="editingSeat.code" placeholder="예: C-1">
+        </div>
+        <div class="form-group">
+          <label>사용자명</label>
+          <input v-model="editingSeat.name" placeholder="이름 입력" @keyup.enter="saveSeat">
+        </div>
+        <div class="modal-buttons">
+          <button @click="closeSeatModal" class="btn-secondary">취소</button>
+          <button @click="saveSeat" class="btn-primary">저장</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 시설 수정 모달 -->
+    <div v-if="showFacilityModal" class="modal-overlay" @click.self="closeFacilityModal">
+      <div class="modal">
+        <h3>시설 정보</h3>
+        <div class="form-group">
+          <label>시설명</label>
+          <input v-model="editingFacility.name" placeholder="예: 회의실" @keyup.enter="saveFacility">
+        </div>
+        <div class="form-group">
+          <label>시설 유형</label>
+          <select v-model="editingFacility.facilityType">
+            <option value="facility">일반 시설 (회색)</option>
+            <option value="facility-room">회의실/사무실 (보라)</option>
+            <option value="facility-equip">장비 (노랑)</option>
+          </select>
+        </div>
+        <div class="modal-buttons">
+          <button @click="closeFacilityModal" class="btn-secondary">취소</button>
+          <button @click="saveFacility" class="btn-primary">저장</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+export default {
+  name: 'FloorPlan',
+  data() {
+    return {
+      items: [],
+      itemIdCounter: 1,
+      deleteMode: false,
+      
+      // 드래그
+      dragItem: null,
+      dragOffsetX: 0,
+      dragOffsetY: 0,
+      
+      // 리사이즈
+      resizeItem: null,
+      resizeStartX: 0,
+      resizeStartY: 0,
+      resizeStartW: 0,
+      resizeStartH: 0,
+      
+      // 모달
+      showSeatModal: false,
+      showFacilityModal: false,
+      editingSeat: {},
+      editingFacility: {},
+      currentEditId: null
+    }
+  },
+  mounted() {
+    this.loadFromStorage()
+    document.addEventListener('keydown', this.handleKeydown)
+  },
+  beforeUnmount() {
+    document.removeEventListener('keydown', this.handleKeydown)
+  },
+  methods: {
+    // 저장/불러오기
+    loadFromStorage() {
+      const saved = localStorage.getItem('floorPlanData')
+      if (saved) {
+        const data = JSON.parse(saved)
+        this.items = data.items || []
+        this.itemIdCounter = data.itemIdCounter || 1
+      } else {
+        this.createDefaultItems()
+      }
+    },
+    
+    saveToStorage() {
+      localStorage.setItem('floorPlanData', JSON.stringify({
+        items: this.items,
+        itemIdCounter: this.itemIdCounter
+      }))
+    },
+    
+    createDefaultItems() {
+      const defaultSeats = [
+        { code: 'C-1', name: '유성은', x: 540, y: 80 },
+        { code: 'C-2', name: '김진솔', x: 620, y: 80 },
+        { code: 'C-3', name: '이정선', x: 700, y: 80 },
+        { code: 'C-4', name: '정원화', x: 540, y: 140 },
+        { code: 'C-5', name: '박수정', x: 620, y: 140 },
+        { code: 'C-6', name: '오상은', x: 700, y: 140 },
+      ]
+      
+      defaultSeats.forEach(s => {
+        this.items.push({
+          id: this.itemIdCounter++,
+          type: 'seat',
+          code: s.code,
+          name: s.name,
+          x: s.x,
+          y: s.y,
+          width: 70,
+          height: 50
+        })
+      })
+      
+      // 기본 시설
+      this.items.push({
+        id: this.itemIdCounter++,
+        type: 'facility',
+        name: '남자화장실',
+        facilityType: 'facility',
+        x: 20, y: 50, width: 100, height: 80
+      })
+      
+      this.items.push({
+        id: this.itemIdCounter++,
+        type: 'facility',
+        name: '여자화장실',
+        facilityType: 'facility',
+        x: 20, y: 150, width: 100, height: 80
+      })
+      
+      this.items.push({
+        id: this.itemIdCounter++,
+        type: 'facility',
+        name: '메인 전산실\nC-121',
+        facilityType: 'facility-room',
+        x: 350, y: 20, width: 150, height: 80
+      })
+      
+      this.saveToStorage()
+    },
+    
+    // 스타일 헬퍼
+    getItemClass(item) {
+      if (item.type === 'seat') return 'seat'
+      return item.facilityType || 'facility'
+    },
+    
+    getItemStyle(item) {
+      return {
+        left: item.x + 'px',
+        top: item.y + 'px',
+        width: item.width + 'px',
+        height: item.height + 'px'
+      }
+    },
+    
+    formatText(text) {
+      return (text || '').replace(/\n/g, '<br>')
+    },
+    
+    // 아이템 추가
+    addSeat() {
+      const newSeat = {
+        id: this.itemIdCounter++,
+        type: 'seat',
+        code: `C-${this.itemIdCounter}`,
+        name: '',
+        x: 100,
+        y: 100,
+        width: 70,
+        height: 50
+      }
+      this.items.push(newSeat)
+      this.saveToStorage()
+      this.editItem(newSeat)
+    },
+    
+    addFacility() {
+      const newFacility = {
+        id: this.itemIdCounter++,
+        type: 'facility',
+        name: '새 시설',
+        facilityType: 'facility',
+        x: 100,
+        y: 100,
+        width: 100,
+        height: 60
+      }
+      this.items.push(newFacility)
+      this.saveToStorage()
+      this.editItem(newFacility)
+    },
+    
+    // 아이템 수정
+    editItem(item) {
+      if (this.deleteMode) {
+        this.deleteItem(item.id)
+        return
+      }
+      
+      this.currentEditId = item.id
+      
+      if (item.type === 'seat') {
+        this.editingSeat = { code: item.code, name: item.name }
+        this.showSeatModal = true
+      } else {
+        this.editingFacility = { name: item.name, facilityType: item.facilityType }
+        this.showFacilityModal = true
+      }
+    },
+    
+    saveSeat() {
+      const item = this.items.find(i => i.id === this.currentEditId)
+      if (item) {
+        item.code = this.editingSeat.code
+        item.name = this.editingSeat.name
+        this.saveToStorage()
+      }
+      this.closeSeatModal()
+    },
+    
+    saveFacility() {
+      const item = this.items.find(i => i.id === this.currentEditId)
+      if (item) {
+        item.name = this.editingFacility.name
+        item.facilityType = this.editingFacility.facilityType
+        this.saveToStorage()
+      }
+      this.closeFacilityModal()
+    },
+    
+    closeSeatModal() {
+      this.showSeatModal = false
+      this.editingSeat = {}
+      this.currentEditId = null
+    },
+    
+    closeFacilityModal() {
+      this.showFacilityModal = false
+      this.editingFacility = {}
+      this.currentEditId = null
+    },
+    
+    // 삭제
+    toggleDeleteMode() {
+      this.deleteMode = !this.deleteMode
+    },
+    
+    deleteItem(id) {
+      if (confirm('이 항목을 삭제하시겠습니까?')) {
+        this.items = this.items.filter(i => i.id !== id)
+        this.saveToStorage()
+      }
+    },
+    
+    // 드래그
+    startDrag(e, item) {
+      if (e.target.classList.contains('resize-handle')) return
+      
+      if (this.deleteMode) {
+        this.deleteItem(item.id)
+        return
+      }
+      
+      this.dragItem = item
+      const rect = e.target.closest('.item').getBoundingClientRect()
+      this.dragOffsetX = e.clientX - rect.left
+      this.dragOffsetY = e.clientY - rect.top
+    },
+    
+    onDrag(e) {
+      if (this.dragItem) {
+        const canvas = this.$refs.canvas
+        const canvasRect = canvas.getBoundingClientRect()
+        
+        let newX = e.clientX - canvasRect.left - this.dragOffsetX
+        let newY = e.clientY - canvasRect.top - this.dragOffsetY
+        
+        // 그리드 스냅 (20px)
+        newX = Math.round(newX / 20) * 20
+        newY = Math.round(newY / 20) * 20
+        
+        // 경계 체크
+        newX = Math.max(0, Math.min(newX, canvasRect.width - this.dragItem.width))
+        newY = Math.max(0, Math.min(newY, canvasRect.height - this.dragItem.height))
+        
+        this.dragItem.x = newX
+        this.dragItem.y = newY
+      }
+      
+      if (this.resizeItem) {
+        let newW = this.resizeStartW + (e.clientX - this.resizeStartX)
+        let newH = this.resizeStartH + (e.clientY - this.resizeStartY)
+        
+        newW = Math.max(50, Math.round(newW / 20) * 20)
+        newH = Math.max(30, Math.round(newH / 20) * 20)
+        
+        this.resizeItem.width = newW
+        this.resizeItem.height = newH
+      }
+    },
+    
+    endDrag() {
+      if (this.dragItem || this.resizeItem) {
+        this.saveToStorage()
+      }
+      this.dragItem = null
+      this.resizeItem = null
+    },
+    
+    // 리사이즈
+    startResize(e, item) {
+      this.resizeItem = item
+      this.resizeStartX = e.clientX
+      this.resizeStartY = e.clientY
+      this.resizeStartW = item.width
+      this.resizeStartH = item.height
+    },
+    
+    // 내보내기/가져오기
+    exportData() {
+      const dataStr = JSON.stringify({ items: this.items, itemIdCounter: this.itemIdCounter }, null, 2)
+      const blob = new Blob([dataStr], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = '배치도_' + new Date().toISOString().slice(0, 10) + '.json'
+      a.click()
+      URL.revokeObjectURL(url)
+    },
+    
+    triggerImport() {
+      this.$refs.fileInput.click()
+    },
+    
+    importData(event) {
+      const file = event.target.files[0]
+      if (!file) return
+      
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        try {
+          const data = JSON.parse(e.target.result)
+          this.items = data.items || []
+          this.itemIdCounter = data.itemIdCounter || 1
+          this.saveToStorage()
+          alert('배치도를 불러왔습니다.')
+        } catch (err) {
+          alert('파일을 읽을 수 없습니다.')
+        }
+      }
+      reader.readAsText(file)
+      event.target.value = ''
+    },
+    
+    resetAll() {
+      if (confirm('모든 배치를 초기화하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) {
+        this.items = []
+        this.itemIdCounter = 1
+        this.createDefaultItems()
+      }
+    },
+    
+    // 키보드
+    handleKeydown(e) {
+      if (e.key === 'Escape') {
+        this.closeSeatModal()
+        this.closeFacilityModal()
+        if (this.deleteMode) this.deleteMode = false
+      }
+    }
+  }
+}
+</script>
+
+<style scoped>
+.floor-plan-editor {
+  padding: 0;
+}
+
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.toolbar h2 {
+  margin: 0;
+  color: #2c3e50;
+}
+
+.toolbar-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.toolbar-buttons button {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.toolbar-buttons button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+}
+
+.btn-primary {
+  background: #3498db;
+  color: white;
+}
+
+.btn-secondary {
+  background: #95a5a6;
+  color: white;
+}
+
+.btn-warning {
+  background: #f39c12;
+  color: white;
+}
+
+.btn-warning.active {
+  background: #e74c3c;
+  box-shadow: 0 0 15px rgba(231, 76, 60, 0.5);
+}
+
+.btn-danger {
+  background: #e74c3c;
+  color: white;
+}
+
+.help-text {
+  text-align: center;
+  color: #7f8c8d;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.canvas-container {
+  background: #f8f9fa;
+  border-radius: 12px;
+  position: relative;
+  width: 100%;
+  height: 700px;
+  overflow: auto;
+  background-image: 
+    linear-gradient(rgba(200,200,200,0.3) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(200,200,200,0.3) 1px, transparent 1px);
+  background-size: 20px 20px;
+  border: 1px solid #ddd;
+}
+
+.item {
+  position: absolute;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  text-align: center;
+  cursor: move;
+  user-select: none;
+  transition: box-shadow 0.2s;
+  overflow: hidden;
+  padding: 4px;
+  line-height: 1.3;
+}
+
+.item:hover {
+  box-shadow: 0 5px 20px rgba(0,0,0,0.25);
+  z-index: 100;
+}
+
+.item.dragging {
+  opacity: 0.8;
+  z-index: 1000;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+}
+
+.item.delete-mode:hover {
+  box-shadow: 0 0 20px rgba(255, 0, 0, 0.6);
+  cursor: pointer;
+}
+
+.seat {
+  background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+  border: 2px solid #1976d2;
+  color: #1565c0;
+}
+
+.seat .name {
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.seat .code {
+  font-size: 9px;
+  opacity: 0.7;
+}
+
+.facility {
+  background: linear-gradient(135deg, #78909c 0%, #546e7a 100%);
+  border: 2px solid #37474f;
+  color: white;
+  font-weight: 500;
+}
+
+.facility-room {
+  background: linear-gradient(135deg, #ce93d8 0%, #ba68c8 100%);
+  border: 2px solid #8e24aa;
+  color: #4a148c;
+  font-weight: 500;
+}
+
+.facility-equip {
+  background: linear-gradient(135deg, #fff176 0%, #ffd54f 100%);
+  border: 2px solid #f9a825;
+  color: #5d4037;
+  font-weight: 500;
+}
+
+.resize-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: #1976d2;
+  border-radius: 2px;
+  bottom: 2px;
+  right: 2px;
+  cursor: se-resize;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.item:hover .resize-handle {
+  opacity: 1;
+}
+
+.legend {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: #555;
+}
+
+.legend-color {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+}
+
+.legend-seat {
+  background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+  border: 2px solid #1976d2;
+}
+
+.legend-facility {
+  background: linear-gradient(135deg, #78909c, #546e7a);
+}
+
+.legend-room {
+  background: linear-gradient(135deg, #ce93d8, #ba68c8);
+}
+
+.legend-equip {
+  background: linear-gradient(135deg, #fff176, #ffd54f);
+}
+
+/* 모달 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.modal {
+  background: white;
+  border-radius: 12px;
+  padding: 1.5rem;
+  min-width: 320px;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+}
+
+.modal h3 {
+  margin: 0 0 1.5rem 0;
+  color: #2c3e50;
+}
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: #555;
+  font-weight: 500;
+}
+
+.form-group input,
+.form-group select {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 1rem;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: #3498db;
+}
+
+.modal-buttons {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 1.5rem;
+}
+
+.modal-buttons button {
+  padding: 0.6rem 1.2rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+</style>

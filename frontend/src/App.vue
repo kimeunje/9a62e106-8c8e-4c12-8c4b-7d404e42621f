@@ -20,6 +20,7 @@
       <UserList v-if="currentView === 'users'" />
       <SealList v-if="currentView === 'seals'" />
       <HistoryTabs v-if="currentView === 'history'" />
+      <FloorPlan v-if="currentView === 'floorplan'" />
     </main>
   </div>
 </template>
@@ -30,6 +31,7 @@ import EquipmentList from './components/equipment/EquipmentList.vue'
 import UserList from './components/users/UserList.vue'
 import SealList from './components/seals/SealList.vue'
 import HistoryTabs from './components/history/HistoryTabs.vue'
+import FloorPlan from './components/floorplan/FloorPlan.vue'
 
 export default {
   name: 'App',
@@ -38,7 +40,8 @@ export default {
     EquipmentList,
     UserList,
     SealList,
-    HistoryTabs
+    HistoryTabs,
+    FloorPlan
   },
   data() {
     return {
@@ -48,7 +51,8 @@ export default {
         { key: 'equipment', label: '장비 관리' },
         { key: 'users', label: '사용자 관리' },
         { key: 'seals', label: '보안씰 관리' },
-        { key: 'history', label: '이력 관리' }
+        { key: 'history', label: '이력 관리' },
+        { key: 'floorplan', label: '배치도' }
       ]
     }
   }
