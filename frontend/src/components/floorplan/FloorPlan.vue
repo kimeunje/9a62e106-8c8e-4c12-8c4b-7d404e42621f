@@ -31,55 +31,43 @@
           <button @click="saveToServer" class="btn-secondary" :disabled="saving">
             {{ saving ? '저장 중...' : '💾 저장' }}
           </button>
-          <button @click="exportData" class="btn-secondary">📥 JSON 내보내기</button>
-          <button @click="triggerImport" class="btn-secondary">📂 JSON 불러오기</button>
-          <button @click="resetCurrentFloor" class="btn-danger">🔄 현재 층 초기화</button>
-          <input 
-            type="file" 
-            ref="fileInput" 
-            accept=".json" 
-            @change="importData" 
-            style="display: none"
-          >
+        </div>
+
+        <div class="toolbar-right">
+          <button @click="exportData" class="btn-secondary btn-sm">📤 내보내기</button>
+          <button @click="triggerImport" class="btn-secondary btn-sm">📥 가져오기</button>
+          <input type="file" ref="fileInput" @change="importData" accept=".json" style="display: none">
+          <button @click="resetCurrentFloor" class="btn-danger btn-sm">🔄 초기화</button>
         </div>
       </div>
 
       <div class="toolbar-row">
-        <!-- 검색 영역 -->
-        <div class="search-area">
+        <div class="search-box">
           <input 
             v-model="searchQuery" 
-            type="text" 
-            placeholder="이름 또는 좌석번호 검색..." 
             @keyup.enter="search"
-            @input="onSearchInput"
+            placeholder="이름 또는 좌석번호 검색..."
             class="search-input"
-          >
-          <label class="search-all-floors">
+          />
+          <label class="search-option">
             <input type="checkbox" v-model="searchAllFloors">
             전체 층 검색
           </label>
-          <button @click="search" class="btn-search">🔍 검색</button>
-          <button v-if="searchResults.length > 0" @click="clearSearch" class="btn-clear">✕ 초기화</button>
-          <span v-if="searchResults.length > 0" class="search-result-count">
-            {{ currentSearchIndex + 1 }} / {{ searchResults.length }}건
-            <template v-if="searchAllFloors && searchResults[currentSearchIndex]">
-              ({{ getFloorName(searchResults[currentSearchIndex].floor) }})
-            </template>
-            <button @click="prevResult" class="btn-nav" :disabled="searchResults.length <= 1">◀</button>
-            <button @click="nextResult" class="btn-nav" :disabled="searchResults.length <= 1">▶</button>
-          </span>
+          <button @click="search" class="btn-search">검색</button>
+          <template v-if="searchResults.length > 0">
+            <span class="search-result-info">
+              {{ currentSearchIndex + 1 }} / {{ searchResults.length }}
+            </span>
+            <button @click="prevResult" class="btn-nav">◀</button>
+            <button @click="nextResult" class="btn-nav">▶</button>
+            <button @click="clearSearch" class="btn-clear">✕</button>
+          </template>
         </div>
       </div>
-
     </div>
 
     <div class="status-bar">
-      <span class="current-floor-indicator">
-        📍 현재: <strong>{{ getFloorName(currentFloor) }}</strong>
-        (좌석 {{ currentFloorItems.filter(i => i.type === 'seat').length }}개, 
-         시설 {{ currentFloorItems.filter(i => i.type === 'facility').length }}개)
-      </span>
+      <span>{{ getFloorName(currentFloor) }} - 좌석: {{ seatCount }}개 | 시설: {{ facilityCount }}개</span>
       <span v-if="lastSaved" class="save-status">
         ✅ 마지막 저장: {{ lastSaved }}
       </span>
@@ -89,7 +77,7 @@
     </div>
 
     <div class="help-text">
-      💡 좌석 클릭: 사용자 정보 | 더블클릭: 수정 | 드래그: 이동 | Ctrl+F: 검색 | Ctrl+S: 저장
+      💡 좌석 클릭: 사용자 정보 | 더블클릭: 수정 | 드래그: 이동 (격자 스냅) | Ctrl+F: 검색 | Ctrl+S: 저장
     </div>
 
     <div 
@@ -254,10 +242,10 @@
               배정된 장비가 없습니다.
             </div>
           </div>
+        </div>
 
-          <div class="modal-actions">
-            <button @click="closeUserInfoModal" class="btn-secondary">닫기</button>
-          </div>
+        <div class="modal-actions">
+          <button @click="closeUserInfoModal" class="btn-secondary">닫기</button>
         </div>
       </div>
     </div>
@@ -269,6 +257,9 @@
 import axios from 'axios'
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+
+// 격자 크기 (CSS background-size와 일치)
+const GRID_SIZE = 20
 
 export default {
   name: 'FloorPlan',
@@ -347,6 +338,14 @@ export default {
           this.floorData[this.currentFloor].itemIdCounter = val
         }
       }
+    },
+    
+    seatCount() {
+      return this.currentFloorItems.filter(i => i.type === 'seat').length
+    },
+    
+    facilityCount() {
+      return this.currentFloorItems.filter(i => i.type === 'facility').length
     }
   },
   
@@ -362,6 +361,11 @@ export default {
   },
   
   methods: {
+    // ===== 격자 스냅 헬퍼 =====
+    snapToGrid(value) {
+      return Math.round(value / GRID_SIZE) * GRID_SIZE
+    },
+    
     // ===== 층 관련 =====
     getFloorName(floorId) {
       const floor = this.floors.find(f => f.id === floorId)
@@ -485,7 +489,7 @@ export default {
       }
     },
     
-    // ===== 아이템 추가 =====
+    // ===== 아이템 추가 (격자에 맞춰 배치) =====
     addSeat() {
       const newSeat = {
         id: this.currentItemIdCounter++,
@@ -493,10 +497,10 @@ export default {
         code: '',
         name: '',
         floor: this.currentFloor,
-        x: 100,
-        y: 100,
-        width: 70,
-        height: 50
+        x: this.snapToGrid(100),
+        y: this.snapToGrid(100),
+        width: this.snapToGrid(80),  // 격자에 맞는 크기
+        height: this.snapToGrid(60)
       }
       this.floorData[this.currentFloor].items.push(newSeat)
       this.markUnsaved()
@@ -509,10 +513,10 @@ export default {
         name: '시설',
         facilityType: 'facility',
         floor: this.currentFloor,
-        x: 100,
-        y: 100,
-        width: 100,
-        height: 80
+        x: this.snapToGrid(100),
+        y: this.snapToGrid(100),
+        width: this.snapToGrid(100),
+        height: this.snapToGrid(80)
       }
       this.floorData[this.currentFloor].items.push(newFacility)
       this.markUnsaved()
@@ -591,7 +595,7 @@ export default {
       this.hasUnsavedChanges = true
     },
     
-    // 드래그
+    // ===== 드래그 (격자 스냅 적용) =====
     startDrag(e, item) {
       if (this.deleteMode) return
       
@@ -625,8 +629,9 @@ export default {
         newX = Math.max(0, newX)
         newY = Math.max(0, newY)
         
-        this.floorData[this.currentFloor].items[idx].x = newX
-        this.floorData[this.currentFloor].items[idx].y = newY
+        // 격자에 스냅
+        this.floorData[this.currentFloor].items[idx].x = this.snapToGrid(newX)
+        this.floorData[this.currentFloor].items[idx].y = this.snapToGrid(newY)
         this.markUnsaved()
       }
     },
@@ -638,7 +643,7 @@ export default {
       }, 100)
     },
     
-    // ===== 리사이즈 =====
+    // ===== 리사이즈 (격자 스냅 적용) =====
     startResize(e, item) {
       this.resizeItem = item
       this.resizeStartX = e.clientX
@@ -658,8 +663,12 @@ export default {
         const deltaX = e.clientX - this.resizeStartX
         const deltaY = e.clientY - this.resizeStartY
         
-        this.floorData[this.currentFloor].items[idx].width = Math.max(40, this.resizeStartW + deltaX)
-        this.floorData[this.currentFloor].items[idx].height = Math.max(30, this.resizeStartH + deltaY)
+        // 최소 크기 보장 및 격자 스냅
+        const newWidth = Math.max(GRID_SIZE * 2, this.resizeStartW + deltaX)
+        const newHeight = Math.max(GRID_SIZE * 2, this.resizeStartH + deltaY)
+        
+        this.floorData[this.currentFloor].items[idx].width = this.snapToGrid(newWidth)
+        this.floorData[this.currentFloor].items[idx].height = this.snapToGrid(newHeight)
         this.markUnsaved()
       }
     },
@@ -807,9 +816,14 @@ export default {
           const user = userRes.data.find(u => u.name === seat.name) || userRes.data[0]
           this.userInfo = user
           
-          // 장비 정보 로드
-          const assignRes = await axios.get(`${API_BASE}/users/${user.id}/assignments`)
-          this.userAssignments = assignRes.data || []
+          // 장비 정보 로드 (사용중인 할당만 필터링)
+          const assignRes = await axios.get(`${API_BASE}/assignments/user/${user.id}`)
+          const assignments = assignRes.data || []
+          // 사용중인 장비만 필터링하고 equipment 정보 추출
+          this.userAssignments = assignments
+            .filter(a => a.status === '사용중')
+            .map(a => a.equipment)
+            .filter(eq => eq) // equipment가 있는 것만
         }
       } catch (error) {
         console.error('사용자 정보 로드 실패:', error)
@@ -827,7 +841,11 @@ export default {
     
     goToUserManagement() {
       this.closeUserInfoModal()
-      this.$router.push('/users')
+      if (this.userInfo?.id) {
+        this.$router.push(`/users/${this.userInfo.id}`)
+      } else {
+        this.$router.push('/users')
+      }
     },
     
     // ===== 내보내기/가져오기 =====
@@ -998,163 +1016,78 @@ export default {
 .floor-tab.active {
   background: #3498db;
   color: white;
-  box-shadow: 0 2px 4px rgba(52, 152, 219, 0.3);
 }
 
-/* 툴바 버튼 */
 .toolbar-buttons {
   display: flex;
+  gap: 0.5rem;
   flex-wrap: wrap;
-  gap: 0.5rem;
 }
 
-.toolbar-buttons button {
-  padding: 0.5rem 0.8rem;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.85rem;
-  transition: all 0.2s;
-}
-
-.btn-primary {
-  background: #3498db;
-  color: white;
-}
-
-.btn-primary:hover {
-  background: #2980b9;
-}
-
-.btn-secondary {
-  background: #95a5a6;
-  color: white;
-}
-
-.btn-secondary:hover {
-  background: #7f8c8d;
-}
-
-.btn-warning {
-  background: #f39c12;
-  color: white;
-}
-
-.btn-warning:hover {
-  background: #e67e22;
-}
-
-.btn-warning.active {
-  background: #e74c3c;
-  animation: pulse 1s infinite;
-}
-
-.btn-danger {
-  background: #e74c3c;
-  color: white;
-}
-
-.btn-danger:hover {
-  background: #c0392b;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
-}
-
-/* 검색 영역 */
-.search-area {
+.toolbar-right {
   display: flex;
-  align-items: center;
   gap: 0.5rem;
+}
+
+.search-box {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
   flex-wrap: wrap;
 }
 
 .search-input {
-  padding: 0.5rem 1rem;
-  border: 2px solid #ddd;
-  border-radius: 20px;
-  font-size: 0.9rem;
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
   width: 200px;
-  transition: all 0.2s;
 }
 
-.search-input:focus {
-  outline: none;
-  border-color: #3498db;
-}
-
-.search-all-floors {
+.search-option {
   display: flex;
   align-items: center;
   gap: 0.25rem;
   font-size: 0.85rem;
   color: #666;
-  cursor: pointer;
 }
 
-.search-all-floors input {
-  cursor: pointer;
-}
-
-.btn-search {
-  padding: 0.5rem 1rem;
-  background: #3498db;
-  color: white;
-  border: none;
-  border-radius: 20px;
-  cursor: pointer;
-}
-
-.btn-search:hover {
-  background: #2980b9;
-}
-
-.btn-clear {
-  padding: 0.35rem 0.7rem;
-  background: #e74c3c;
-  color: white;
-  border: none;
-  border-radius: 20px;
-  cursor: pointer;
-  font-size: 0.8rem;
-}
-
-.search-result-count {
-  font-size: 0.85rem;
+.search-result-info {
+  font-size: 0.9rem;
   color: #666;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  margin-left: 0.5rem;
 }
 
 .btn-nav {
   padding: 0.25rem 0.5rem;
-  background: #ecf0f1;
-  border: none;
+  border: 1px solid #ddd;
+  background: white;
   border-radius: 4px;
   cursor: pointer;
 }
 
-.btn-nav:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.btn-nav:hover {
+  background: #f0f0f0;
 }
 
-/* 상태 바 */
+.btn-clear {
+  padding: 0.25rem 0.5rem;
+  border: none;
+  background: #e74c3c;
+  color: white;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
 .status-bar {
   display: flex;
-  gap: 1rem;
+  justify-content: space-between;
+  align-items: center;
   padding: 0.5rem 1rem;
   background: #f8f9fa;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  flex-wrap: wrap;
-}
-
-.current-floor-indicator {
+  border-radius: 4px;
+  font-size: 0.9rem;
   color: #2c3e50;
+  margin-bottom: 0.5rem;
 }
 
 .save-status {
@@ -1296,12 +1229,11 @@ export default {
 /* 범례 */
 .legend {
   display: flex;
-  flex-wrap: wrap;
   gap: 1.5rem;
   margin-top: 1rem;
-  padding: 1rem;
+  padding: 0.75rem;
   background: #f8f9fa;
-  border-radius: 8px;
+  border-radius: 4px;
 }
 
 .legend-item {
@@ -1309,51 +1241,61 @@ export default {
   align-items: center;
   gap: 0.5rem;
   font-size: 0.85rem;
-  color: #555;
 }
 
 .legend-color {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border-radius: 4px;
 }
 
-.legend-seat { background: linear-gradient(135deg, #e3f2fd, #bbdefb); border: 2px solid #1976d2; }
-.legend-facility { background: linear-gradient(135deg, #78909c, #546e7a); }
-.legend-room { background: linear-gradient(135deg, #ce93d8, #ba68c8); }
-.legend-equip { background: linear-gradient(135deg, #fff176, #ffd54f); }
+.legend-seat {
+  background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+  border: 2px solid #1976d2;
+}
 
-/* 모달 공통 */
+.legend-facility {
+  background: linear-gradient(135deg, #78909c, #546e7a);
+}
+
+.legend-room {
+  background: linear-gradient(135deg, #ce93d8, #ba68c8);
+}
+
+.legend-equip {
+  background: linear-gradient(135deg, #fff176, #ffd54f);
+}
+
+/* 모달 스타일 */
 .modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
-  width: 100%;
-  height: 100%;
+  right: 0;
+  bottom: 0;
   background: rgba(0,0,0,0.5);
   display: flex;
-  align-items: center;
   justify-content: center;
+  align-items: center;
   z-index: 2000;
 }
 
 .modal {
   background: white;
-  border-radius: 12px;
   padding: 1.5rem;
-  min-width: 320px;
-  max-width: 90vw;
+  border-radius: 8px;
+  min-width: 300px;
+  max-width: 90%;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 20px 40px rgba(0,0,0,0.3);
 }
 
 .modal-large {
-  width: 500px;
+  min-width: 500px;
 }
 
 .modal h3 {
-  margin: 0 0 1.5rem 0;
+  margin: 0 0 1rem 0;
   color: #2c3e50;
 }
 
@@ -1361,22 +1303,14 @@ export default {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1.5rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid #eee;
-}
-
-.modal-header h3 {
-  margin: 0;
+  margin-bottom: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #ecf0f1;
 }
 
 .seat-code {
-  background: #e3f2fd;
-  color: #1976d2;
-  padding: 0.25rem 0.75rem;
-  border-radius: 20px;
-  font-size: 0.85rem;
-  font-weight: 600;
+  color: #7f8c8d;
+  font-size: 0.9rem;
 }
 
 .form-group {
@@ -1386,60 +1320,126 @@ export default {
 .form-group label {
   display: block;
   margin-bottom: 0.5rem;
-  color: #555;
+  color: #2c3e50;
   font-weight: 500;
 }
 
 .form-group input,
 .form-group select {
   width: 100%;
-  padding: 0.75rem;
+  padding: 0.5rem;
   border: 1px solid #ddd;
-  border-radius: 6px;
-  font-size: 1rem;
-  box-sizing: border-box;
-}
-
-.form-group input:focus,
-.form-group select:focus {
-  outline: none;
-  border-color: #3498db;
+  border-radius: 4px;
+  font-size: 0.9rem;
 }
 
 .modal-buttons {
   display: flex;
-  gap: 0.75rem;
+  gap: 0.5rem;
   justify-content: flex-end;
-  margin-top: 1.5rem;
+  margin-top: 1rem;
 }
 
-.modal-buttons button {
-  padding: 0.6rem 1.2rem;
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #ecf0f1;
+}
+
+/* 버튼 스타일 */
+.btn-primary {
+  background: #3498db;
+  color: white;
   border: none;
-  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
   cursor: pointer;
-  font-size: 0.95rem;
+}
+
+.btn-primary:hover {
+  background: #2980b9;
+}
+
+.btn-secondary {
+  background: #95a5a6;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.btn-secondary:hover {
+  background: #7f8c8d;
+}
+
+.btn-warning {
+  background: #f39c12;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.btn-warning:hover {
+  background: #e67e22;
+}
+
+.btn-warning.active {
+  background: #e74c3c;
+}
+
+.btn-danger {
+  background: #e74c3c;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.btn-danger:hover {
+  background: #c0392b;
+}
+
+.btn-sm {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.btn-search {
+  background: #3498db;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
 }
 
 /* 로딩 상태 */
 .loading-state {
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   padding: 2rem;
+  color: #7f8c8d;
 }
 
 .spinner {
   width: 40px;
   height: 40px;
-  border: 4px solid #f3f3f3;
-  border-top: 4px solid #3498db;
+  border: 3px solid #ecf0f1;
+  border-top-color: #3498db;
   border-radius: 50%;
   animation: spin 1s linear infinite;
-  margin: 0 auto 1rem;
+  margin-bottom: 1rem;
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* 사용자 없음 상태 */
@@ -1455,47 +1455,45 @@ export default {
 
 .no-user-state .hint {
   color: #7f8c8d;
-  margin: 1rem 0;
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
 }
 
-/* 사용자 정보 */
+/* 사용자 정보 내용 */
 .user-info-content {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
+  animation: fadeIn 0.2s;
+}
+
+.info-section {
+  margin-bottom: 1.5rem;
 }
 
 .info-section h4 {
-  margin: 0 0 1rem 0;
+  margin: 0 0 0.75rem 0;
   color: #2c3e50;
-  font-size: 1rem;
+  font-size: 0.95rem;
   padding-bottom: 0.5rem;
-  border-bottom: 2px solid #3498db;
+  border-bottom: 1px solid #ecf0f1;
 }
 
 .info-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 1rem;
 }
 
-.info-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
 .info-item label {
+  display: block;
   font-size: 0.8rem;
   color: #7f8c8d;
+  margin-bottom: 0.25rem;
 }
 
 .info-item span {
-  font-size: 0.95rem;
   color: #2c3e50;
+  font-weight: 500;
 }
 
-/* 장비 목록 */
 .equipment-list {
   display: flex;
   flex-direction: column;
@@ -1504,22 +1502,22 @@ export default {
 
 .equipment-card {
   background: #f8f9fa;
-  border-radius: 8px;
-  padding: 0.75rem 1rem;
-  border-left: 4px solid #3498db;
+  padding: 0.75rem;
+  border-radius: 6px;
+  border-left: 3px solid #3498db;
 }
 
 .equipment-main {
   display: flex;
-  align-items: center;
   gap: 0.75rem;
+  align-items: center;
   margin-bottom: 0.5rem;
 }
 
 .asset-number {
   font-family: monospace;
-  font-weight: 600;
   color: #3498db;
+  font-weight: 600;
 }
 
 .model-name {
@@ -1528,50 +1526,73 @@ export default {
 
 .category-tag {
   font-size: 0.75rem;
-  padding: 0.15rem 0.5rem;
-  border-radius: 4px;
   background: #ecf0f1;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
   color: #7f8c8d;
 }
 
 .equipment-sub {
-  display: flex;
-  gap: 1rem;
-  font-size: 0.8rem;
+  font-size: 0.85rem;
   color: #7f8c8d;
+  display: flex;
+  gap: 0.75rem;
 }
 
 .network-tag {
+  font-size: 0.75rem;
   padding: 0.1rem 0.4rem;
   border-radius: 3px;
-  font-size: 0.75rem;
 }
 
-.network-internal { background: #3498db; color: white; }
-.network-external { background: #e74c3c; color: white; }
-.network-default { background: #9b59b6; color: white; }
+.network-internal {
+  background: #3498db;
+  color: white;
+}
+
+.network-external {
+  background: #e74c3c;
+  color: white;
+}
+
+.network-default {
+  background: #9b59b6;
+  color: white;
+}
 
 .no-equipment {
+  color: #95a5a6;
+  font-style: italic;
   text-align: center;
-  padding: 1.5rem;
-  color: #7f8c8d;
-  background: #f8f9fa;
-  border-radius: 8px;
+  padding: 1rem;
 }
 
-.modal-actions {
-  display: flex;
-  gap: 0.75rem;
-  justify-content: flex-end;
-  padding-top: 1rem;
-  border-top: 1px solid #eee;
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-.modal-actions button {
-  padding: 0.6rem 1.2rem;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.95rem;
+@media (max-width: 768px) {
+  .toolbar-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .search-box {
+    width: 100%;
+  }
+  
+  .search-input {
+    flex: 1;
+  }
+  
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .modal-large {
+    min-width: auto;
+    width: 95%;
+  }
 }
 </style>

@@ -207,6 +207,13 @@ export default {
     ReplaceModal,
     EquipmentDetailModal
   },
+  props: {
+    // Vue Router에서 전달받는 userId (route params)
+    userId: {
+      type: [String, Number],
+      default: null
+    }
+  },
   data() {
     return {
       userList: [],
@@ -230,9 +237,26 @@ export default {
       selectedEquipment: null
     }
   },
-  mounted() {
-    this.loadUsers()
-    this.loadActiveAssignments()
+  watch: {
+    // route params 변경 감지
+    '$route.params.userId': {
+      immediate: true,
+      handler(newUserId) {
+        if (newUserId) {
+          this.selectUserById(newUserId)
+        }
+      }
+    }
+  },
+  async mounted() {
+    await this.loadUsers()
+    await this.loadActiveAssignments()
+    
+    // 초기 userId가 있으면 해당 사용자 선택
+    const routeUserId = this.$route?.params?.userId || this.userId
+    if (routeUserId) {
+      this.selectUserById(routeUserId)
+    }
   },
   methods: {
     async loadUsers() {
@@ -265,6 +289,25 @@ export default {
     async selectUser(user) {
       this.selectedUser = user
       await this.loadUserAssignments(user.id)
+      
+      // URL 업데이트 (히스토리에 추가하지 않고 replace)
+      if (this.$router && this.$route.params.userId !== String(user.id)) {
+        this.$router.replace({ name: 'user-detail', params: { userId: user.id } })
+      }
+    },
+    
+    // ID로 사용자 선택 (외부에서 호출 가능)
+    async selectUserById(userId) {
+      // 사용자 목록이 로드될 때까지 대기
+      if (this.userList.length === 0) {
+        await this.loadUsers()
+      }
+      
+      const user = this.userList.find(u => u.id === Number(userId))
+      if (user) {
+        this.selectedUser = user
+        await this.loadUserAssignments(user.id)
+      }
     },
     
     async loadUserAssignments(userId) {
@@ -335,6 +378,11 @@ export default {
           this.selectedUser = null
           this.userAssignments = []
           this.userAllAssignments = []
+          
+          // URL도 초기화
+          if (this.$router) {
+            this.$router.replace({ name: 'users' })
+          }
         }
         
         await this.loadUsers()
