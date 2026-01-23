@@ -759,6 +759,7 @@ body {
 .seal-status-파손 { background: #e74c3c; color: white; }
 .seal-status-분실 { background: #95a5a6; color: white; }
 .seal-status-교체필요 { background: #e67e22; color: white; }
+.seal-status-폐기 { background-color: #6c757d; color: white; }
 
 /* ==================== 이력 탭 ==================== */
 .history-tabs {
