@@ -89,10 +89,11 @@ def log_change(entity_type, entity_id, change_type, field_name, old_value, new_v
 
 
 def check_seal_duplicate(seal_number, exclude_seal_id=None, exclude_equipment_id=None):
-    """보안씰 중복 체크"""
+    """보안씰 중복 체크 (폐기된 보안씰 제외)"""
     from database_models import SecuritySeal
     
     query = SecuritySeal.query.filter_by(seal_number=seal_number)
+    query = query.filter(SecuritySeal.status != '폐기')  # 폐기된 씰 제외
     
     if exclude_seal_id:
         query = query.filter(SecuritySeal.id != exclude_seal_id)
