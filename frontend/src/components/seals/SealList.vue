@@ -20,8 +20,14 @@
       <button @click="resetSearch" class="btn-reset">초기화</button>
     </div>
 
+    <!-- 로딩 표시 -->
+    <div v-if="loading" class="loading-container">
+      <div class="loading-spinner"></div>
+      <p class="loading-text">보안씰 목록을 불러오는 중...</p>
+    </div>
+
     <!-- 테이블 -->
-    <div class="table-container">
+    <div v-else class="table-container">
       <table class="data-table">
         <thead>
           <tr>
@@ -85,7 +91,7 @@ export default {
     return {
       sealList: [],
       equipmentList: [],
-      equipmentMap: {}, // 장비 ID -> 장비 정보 맵
+      equipmentMap: {},
       search: {
         seal_number: '',
         asset_number: '',
@@ -93,21 +99,24 @@ export default {
       },
       showModal: false,
       isEdit: false,
-      selectedSeal: null
+      selectedSeal: null,
+      loading: false  // 로딩 상태 추가
     }
   },
   mounted() {
-    this.loadEquipment().then(() => {
-      this.loadSeals()
-    })
+    this.loadSeals()
+    this.loadEquipment()
   },
   methods: {
     async loadSeals() {
+      this.loading = true  // 로딩 시작
       try {
         const response = await sealApi.getAll()
         this.sealList = response.data
       } catch (error) {
         console.error('보안씰 목록 로드 실패:', error)
+      } finally {
+        this.loading = false  // 로딩 완료
       }
     },
     
@@ -149,6 +158,7 @@ export default {
     },
     
     async searchSeals() {
+      this.loading = true  // 검색 시에도 로딩 표시
       try {
         const params = {}
         if (this.search.seal_number) params.seal_number = this.search.seal_number
@@ -159,6 +169,8 @@ export default {
         this.sealList = response.data
       } catch (error) {
         alert('검색에 실패했습니다.')
+      } finally {
+        this.loading = false  // 로딩 완료
       }
     },
     
@@ -217,3 +229,38 @@ export default {
   }
 }
 </script>
+
+<style scoped>
+/* 로딩 컨테이너 스타일 */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin-top: 1rem;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #e0e0e0;
+  border-top-color: #3498db;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-text {
+  margin-top: 1rem;
+  color: #7f8c8d;
+  font-size: 0.95rem;
+}
+</style>
