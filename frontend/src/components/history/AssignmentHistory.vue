@@ -14,7 +14,13 @@
       <button @click="loadHistory" class="btn-search">검색</button>
     </div>
     
-    <div class="table-container">
+    <!-- 로딩 표시 -->
+    <div v-if="loading" class="loading-container">
+      <div class="loading-spinner"></div>
+      <p class="loading-text">할당 이력을 불러오는 중...</p>
+    </div>
+    
+    <div v-else class="table-container">
       <table class="data-table">
         <thead>
           <tr>
@@ -64,7 +70,8 @@ export default {
         status: '',
         start_date: '',
         end_date: ''
-      }
+      },
+      loading: false  // 로딩 상태 추가
     }
   },
   mounted() {
@@ -72,6 +79,7 @@ export default {
   },
   methods: {
     async loadHistory() {
+      this.loading = true  // 로딩 시작
       try {
         const response = await assignmentApi.getAll()
         let data = response.data
@@ -90,6 +98,8 @@ export default {
         this.historyList = data
       } catch (error) {
         console.error('할당 이력 로드 실패:', error)
+      } finally {
+        this.loading = false  // 로딩 완료
       }
     },
     
@@ -100,3 +110,38 @@ export default {
   }
 }
 </script>
+
+<style scoped>
+/* 로딩 컨테이너 스타일 */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin-top: 1rem;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #e0e0e0;
+  border-top-color: #3498db;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-text {
+  margin-top: 1rem;
+  color: #7f8c8d;
+  font-size: 0.95rem;
+}
+</style>
