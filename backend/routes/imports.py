@@ -18,7 +18,7 @@ def export_excel():
     for assignment in assignments:
         equipment = assignment.equipment
         user = assignment.user
-        seal_numbers = ', '.join([seal.seal_number for seal in equipment.security_seals])
+        seal_numbers = ', '.join([seal.seal_number for seal in equipment.security_seals if seal.status != '폐기'])
         
         data.append({
             '구분': equipment.category,
