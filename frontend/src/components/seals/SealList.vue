@@ -15,6 +15,7 @@
         <option value="파손">파손</option>
         <option value="분실">분실</option>
         <option value="교체필요">교체필요</option>
+        <option value="폐기">폐기</option>  <!-- 추가 -->
       </select>
       <button @click="searchSeals" class="btn-search">검색</button>
       <button @click="resetSearch" class="btn-reset">초기화</button>
