@@ -8,6 +8,12 @@ from utils import format_seal_number, check_seal_duplicate, log_change
 @seals_bp.route('/security-seals', methods=['GET'])
 def get_all_security_seals():
     """전체 보안씰 목록 조회"""
+    include_disposed = request.args.get('include_disposed', 'false').lower() == 'true'
+    
+    query = SecuritySeal.query
+    if not include_disposed:
+        query = query.filter(SecuritySeal.status != '폐기')
+    
     seals = SecuritySeal.query.all()
     result = []
     for seal in seals:
@@ -211,24 +217,28 @@ def update_security_seal(id):
 
 @seals_bp.route('/security-seals/<int:id>', methods=['DELETE'])
 def delete_security_seal(id):
-    """보안씰 삭제"""
+    """보안씰 폐기 (소프트 삭제)"""
     seal = SecuritySeal.query.get_or_404(id)
     
     equipment = Equipment.query.get(seal.equipment_id)
     equipment_info = equipment.asset_number if equipment else 'N/A'
-    seal_number = seal.seal_number
     
     changed_by = None
     if request.json:
         changed_by = request.json.get('changed_by')
     
-    log_change('security_seal', id, '보안씰 삭제', '보안씰 제거',
-               f"{seal_number} (장비: {equipment_info})", None,
-               changed_by, auto_commit=False)
+    # 물리적 삭제 대신 상태를 '폐기'로 변경
+    old_status = seal.status
+    seal.status = '폐기'
+    seal.disposed_date = datetime.utcnow().date()
+    seal.equipment_id = None  # 장비 연결 해제
     
-    db.session.delete(seal)
+    log_change('security_seal', id, '보안씰 폐기', '상태',
+               old_status, '폐기',
+               changed_by, f"장비: {equipment_info}", auto_commit=False)
+    
     db.session.commit()
-    return jsonify({'message': '삭제되었습니다'}), 200
+    return jsonify({'message': '보안씰이 폐기 처리되었습니다'}), 200
 
 
 @seals_bp.route('/security-seals/equipment/<int:equipment_id>', methods=['GET'])
