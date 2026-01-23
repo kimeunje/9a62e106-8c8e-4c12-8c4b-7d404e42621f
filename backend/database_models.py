@@ -102,7 +102,8 @@ class SecuritySeal(db.Model):
     
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     seal_number = db.Column(db.String(50), nullable=False, index=True)
-    equipment_id = db.Column(db.Integer, db.ForeignKey('equipment.id', ondelete='CASCADE'), nullable=False, index=True)
+    equipment_id = db.Column(db.Integer, db.ForeignKey('equipment.id', ondelete='SET NULL'), nullable=True, index=True)
+    disposed_date = db.Column(db.Date, nullable=True)  # 폐기일 추가
     attached_date = db.Column(db.Date, default=datetime.utcnow)
     attached_location = db.Column(db.String(50), nullable=True)
     status = db.Column(db.String(20), default='정상')
