@@ -202,17 +202,15 @@ def update_equipment(id):
         
         if old_seal_numbers != new_seal_numbers:
             # 제거할 보안씰 - 물리적 삭제 대신 폐기 처리
-            seals_to_remove = old_seal_numbers - new_seal_numbers
             for seal_num in seals_to_remove:
                 seal = old_seals[seal_num]
-                old_status = seal.status
                 seal.status = '폐기'
                 seal.disposed_date = datetime.utcnow().date()
                 seal.equipment_id = None  # 장비 연결 해제
                 
-                log_change('security_seal', seal.id, '보안씰 폐기', '상태',
-                           old_status, '폐기',
-                           data.get('changed_by'), f"장비: {equipment.asset_number}", auto_commit=False)
+                log_change('security_seal', seal.id, '보안씰 폐기', '보안씰 제거',
+                        f"{seal_num} (장비: {equipment.asset_number})", None,
+                        data.get('changed_by'), data.get('reason'), auto_commit=False)
             
             # 추가할 보안씰
             for seal_num in seals_to_add:
@@ -253,14 +251,14 @@ def delete_equipment(id):
     # 연결된 보안씰들을 폐기 처리 (물리적 삭제 대신)
     for seal in equipment.security_seals:
         if seal.status != '폐기':  # 이미 폐기된 씰은 제외
-            old_status = seal.status
+            seal_number = seal.seal_number
             seal.status = '폐기'
             seal.disposed_date = datetime.utcnow().date()
             seal.equipment_id = None  # 장비 연결 해제
             
-            log_change('security_seal', seal.id, '보안씰 폐기', '상태',
-                       old_status, '폐기',
-                       None, f"장비 삭제: {equipment.asset_number}", auto_commit=False)
+            log_change('security_seal', seal.id, '보안씰 폐기', '보안씰 제거',
+                    f"{seal_number} (장비: {equipment.asset_number})", None,
+                    None, f"장비 삭제: {equipment.asset_number}", auto_commit=False)
     
     db.session.delete(equipment)
     db.session.commit()
