@@ -11,30 +11,56 @@ from utils import (
 
 @imports_bp.route('/export/excel', methods=['GET'])
 def export_excel():
-    """엑셀 내보내기"""
-    assignments = Assignment.query.filter_by(status='사용중').all()
+    """엑셀 내보내기 - 사용중 장비 + 사용가능(재고) 장비 모두 포함"""
+    # 폐기를 제외한 모든 장비를 자산번호순으로 조회
+    equipment_list = Equipment.query.filter(
+        Equipment.status != '폐기'
+    ).order_by(Equipment.category, Equipment.asset_number).all()
     
     data = []
-    for assignment in assignments:
-        equipment = assignment.equipment
-        user = assignment.user
-        seal_numbers = ', '.join([seal.seal_number for seal in equipment.security_seals if seal.status != '폐기'])
+    for equipment in equipment_list:
+        # 현재 사용중인 할당 조회
+        active_assignment = Assignment.query.filter_by(
+            equipment_id=equipment.id,
+            status='사용중'
+        ).first()
+        
+        seal_numbers = ', '.join([seal.seal_number for seal in equipment.security_seals])
+        
+        if active_assignment and active_assignment.user:
+            # 사용중 장비 - 사용자 정보 표시
+            user = active_assignment.user
+            user_name = user.name
+            department = user.department
+            location = user.location
+            assignment_date = (
+                active_assignment.assignment_date.isoformat() 
+                if active_assignment.assignment_date else ''
+            )
+        else:
+            # 사용가능/수리중 장비 - 재고로 표시
+            label = '재고' if equipment.status == '사용가능' else equipment.status
+            user_name = label
+            department = label
+            location = label
+            assignment_date = ''
         
         data.append({
             '구분': equipment.category,
             '모델 명': equipment.model_name,
             '자산 번호': equipment.asset_number,
+            '상태': equipment.status,
             '취득일자': equipment.acquisition_date.isoformat() if equipment.acquisition_date else '',
             'IP': equipment.ip_address or '-',
-            '사용자': user.name,
-            '부서': user.department,
-            '위치': user.location,
+            '사용자': user_name,
+            '부서': department,
+            '위치': location,
             '보안씰': seal_numbers or '-',
             '사용월수': f"{equipment.calculate_usage_months()}개월",
             '사용년수': f"{equipment.calculate_usage_years()}년",
             '망분리': equipment.network_type or '-',
             '윈도우 버전': equipment.windows_version or '-',
-            '할당일자': assignment.assignment_date.isoformat() if assignment.assignment_date else ''
+            '할당일자': assignment_date
         })
     
     df = pd.DataFrame(data)
@@ -51,7 +77,6 @@ def export_excel():
         as_attachment=True,
         download_name=f'전산장비목록_{datetime.now().strftime("%Y%m%d")}.xlsx'
     )
-
 
 @imports_bp.route('/import/excel/preview', methods=['POST'])
 def preview_excel_import():
